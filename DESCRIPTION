@@ -1,28 +1,31 @@
 Package: CompFinanceR
 Type: Package
 Title: Computational Finance Tools in R
-Version: 0.1.0
+Version: 0.2.0
 Authors@R: c(
     person("Lech", "Grzelak", email = "lech.grzelak@example.com", role = c("aut")),
     person("Repository", "Contributor", email = "contributor@example.com", role = c("cre", "aut"))
     )
-Description: A comprehensive R package for computational finance, providing tools for
-    simulating stochastic processes (GBM, Heston, CIR, Merton, Bates), pricing options
+Description: A comprehensive R package for computational finance implementing a consistent
+    spec-fit-predict interface inspired by tidymodels and hardhat principles. Provides tools for
+    simulating stochastic processes (GBM, ABM, Heston, CIR, Merton, Bates), pricing options
     (European, Asian, Barrier, Digital, Forward Start), computing Greeks, and implementing
-    hedging strategies. All functions follow tidyverse design principles with comprehensive
-    documentation and examples.
+    hedging strategies. Uses modern functional programming with purrr (no for loops or apply),
+    robust input validation with checkmate, and follows tidyverse design principles throughout.
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.2.0
+Depends:
+    R (>= 4.1.0)
 Imports:
     tibble (>= 3.0.0),
     dplyr (>= 1.0.0),
     ggplot2 (>= 3.3.0),
-    purrr (>= 0.3.0),
+    purrr (>= 1.0.0),
     tidyr (>= 1.1.0),
-    rlang (>= 0.4.0),
+    rlang (>= 1.0.0),
     checkmate (>= 2.0.0),
     MASS,
     stats
