@@ -176,8 +176,8 @@ Error: Assertion on 'n_paths' failed: Element 1 is not >= 1.
 
 | Function | Purpose | Output Type |
 |----------|---------|-------------|
-| `purrr::map_dfc()` | Apply function to each column | data.frame/tibble |
-| `purrr::map_dfr()` | Apply function and row-bind results | data.frame/tibble |
+| `purrr::map() |> list_cbind()` | Apply function to each column | data.frame/tibble |
+| `purrr::map() |> bind_rows()` | Apply function and row-bind results | data.frame/tibble |
 | `purrr::map_dbl()` | Apply function, return numeric vector | double vector |
 | `purrr::map()` | Apply function, return list | list |
 | `purrr::accumulate()` | Cumulative reduce (like scan) | list |
@@ -186,7 +186,7 @@ Error: Assertion on 'n_paths' failed: Element 1 is not >= 1.
 
 | Function | Validates | Example |
 |----------|-----------|---------|
-| `assert_int()` | Single integer | `assert_int(n, lower = 1)` |
+| `assert_integerish()` | Single integer | `assert_integerish(n, lower = 1)` |
 | `assert_number()` | Single numeric | `assert_number(x, lower = 0, finite = TRUE)` |
 | `assert_logical()` | Logical value | `assert_logical(flag, len = 1)` |
 

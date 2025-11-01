@@ -207,19 +207,14 @@ simulate_heston_euler <- function(process_spec, n_paths, n_steps, maturity, seed
 
   paths_tidy <- purrr::map(
     seq_len(n_paths),
-    purrr::in_parallel(
-      \(path_idx) {
-        tibble::tibble(
-          path_id = path_idx,
-          time = time_grid,
-          stock_price = stock_matrix[path_idx, ],
-          variance = variance_matrix[path_idx, ]
-        )
-      },
-      time_grid = time_grid,
-      stock_matrix = stock_matrix,
-      variance_matrix = variance_matrix
-    )
+    \(path_idx) {
+      tibble::tibble(
+        path_id = path_idx,
+        time = time_grid,
+        stock_price = stock_matrix[path_idx, ],
+        variance = variance_matrix[path_idx, ]
+      )
+    }
   ) |> purrr::list_rbind()
 
   attr(paths_tidy, "process_type") <- "heston"
@@ -288,19 +283,14 @@ simulate_heston_aes <- function(process_spec, n_paths, n_steps, maturity, seed) 
 
   paths_tidy <- purrr::map(
     seq_len(n_paths),
-    purrr::in_parallel(
-      \(path_idx) {
-        tibble::tibble(
-          path_id = path_idx,
-          time = time_grid,
-          stock_price = stock_matrix[path_idx, ],
-          variance = variance_matrix[path_idx, ]
-        )
-      },
-      time_grid = time_grid,
-      stock_matrix = stock_matrix,
-      variance_matrix = variance_matrix
-    )
+    \(path_idx) {
+      tibble::tibble(
+        path_id = path_idx,
+        time = time_grid,
+        stock_price = stock_matrix[path_idx, ],
+        variance = variance_matrix[path_idx, ]
+      )
+    }
   ) |> purrr::list_rbind()
 
   attr(paths_tidy, "process_type") <- "heston"

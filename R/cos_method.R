@@ -96,6 +96,12 @@ cos_call_put_price <- function(cf,
 #' @param n_terms Integer. Number of cosine expansion terms. Default is 256.
 #' @param truncation Numeric scalar controlling the truncation domain. Default is
 #'   8.
+#' @param lower_bound Optional numeric scalar specifying the lower limit of the
+#'   truncated integration domain. Must be supplied together with
+#'   `upper_bound`.
+#' @param upper_bound Optional numeric scalar specifying the upper limit of the
+#'   truncated integration domain. Must be supplied together with
+#'   `lower_bound`.
 #'
 #' @return A tibble with columns `x` and `density`.
 #' @export
@@ -103,18 +109,36 @@ cos_density_recovery <- function(cf,
                                  x,
                                  maturity,
                                  n_terms = 256L,
-                                 truncation = 8) {
+                                 truncation = 8,
+                                 lower_bound = NULL,
+                                 upper_bound = NULL) {
   checkmate::assert_function(cf)
   checkmate::assert_numeric(x, any.missing = FALSE, finite = TRUE)
   checkmate::assert_number(maturity, lower = 0, finite = TRUE)
   checkmate::assert_integerish(n_terms, lower = 1, len = 1)
-  checkmate::assert_number(truncation, lower = 0, finite = TRUE)
+  if (is.null(lower_bound) && is.null(upper_bound)) {
+    checkmate::assert_number(truncation, lower = 0, finite = TRUE)
+  } else {
+    if (xor(is.null(lower_bound), is.null(upper_bound))) {
+      rlang::abort("`lower_bound` and `upper_bound` must be supplied together")
+    }
+    checkmate::assert_number(lower_bound, finite = TRUE)
+    checkmate::assert_number(upper_bound, finite = TRUE)
+    if (lower_bound >= upper_bound) {
+      rlang::abort("`lower_bound` must be strictly less than `upper_bound`")
+    }
+  }
 
   n_terms <- as.integer(n_terms)
   x <- as.numeric(x)
 
-  a <- -truncation * sqrt(maturity)
-  b <- truncation * sqrt(maturity)
+  if (!is.null(lower_bound) && !is.null(upper_bound)) {
+    a <- lower_bound
+    b <- upper_bound
+  } else {
+    a <- -truncation * sqrt(maturity)
+    b <- truncation * sqrt(maturity)
+  }
   k <- seq_len(n_terms) - 1
   u <- k * pi / (b - a)
 

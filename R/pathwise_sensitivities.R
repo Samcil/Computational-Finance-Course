@@ -16,10 +16,9 @@
 #'
 #' @return Tibble with columns `strike` and `delta_pathwise`.
 #' @details
-#'   Work is distributed with `purrr::in_parallel()`, so the calculations run
-#'   sequentially by default and switch to parallel execution when callers start
-#'   mirai daemons (e.g. `mirai::daemons(6)` before the call and
-#'   `mirai::daemons(0)` afterwards).
+#'   Strikes are processed sequentially with `purrr::map()`. To parallelise the
+#'   workload, wrap calls in your preferred parallel purrr backend or shard the
+#'   strike vector across workers.
 #' @examples
 #' spec <- gbm_spec(initial_value = 100, drift = 0.05, volatility = 0.2)
 #' paths <- simulate_paths(spec, n_paths = 5000, n_steps = 128, maturity = 1, seed = 42)
@@ -58,22 +57,15 @@ pathwise_delta <- function(paths,
 
   purrr::map(
     strikes,
-    purrr::in_parallel(
-      \(strike) {
-        indicator <- if (option_type == "call") {
-          terminal_prices > strike
-        } else {
-          terminal_prices < strike
-        }
-        estimator <- discount_factor * sign_multiplier * mean((terminal_prices / initial_price) * indicator)
-        tibble::tibble(strike = strike, delta_pathwise = estimator)
-      },
-      terminal_prices = terminal_prices,
-      discount_factor = discount_factor,
-      sign_multiplier = sign_multiplier,
-      initial_price = initial_price,
-      option_type = option_type
-    )
+    \(strike) {
+      indicator <- if (option_type == "call") {
+        terminal_prices > strike
+      } else {
+        terminal_prices < strike
+      }
+      estimator <- discount_factor * sign_multiplier * mean((terminal_prices / initial_price) * indicator)
+      tibble::tibble(strike = strike, delta_pathwise = estimator)
+    }
   ) |> purrr::list_rbind()
 }
 
@@ -87,10 +79,8 @@ pathwise_delta <- function(paths,
 #'
 #' @return Tibble with columns `strike` and `vega_pathwise`.
 #' @details
-#'   Work is assigned through `purrr::in_parallel()`, remaining sequential unless
-#'   mirai daemons are running. Start workers with `mirai::daemons(n)` before
-#'   calling and shut them down with `mirai::daemons(0)` afterwards to leverage
-#'   multiple cores.
+#'   Strikes are evaluated sequentially. Use your preferred parallel backend to
+#'   distribute the work if lower latency is required.
 #' @examples
 #' spec <- gbm_spec(initial_value = 100, drift = 0.05, volatility = 0.2)
 #' paths <- simulate_paths(spec, n_paths = 5000, n_steps = 128, maturity = 1, seed = 42)
@@ -133,23 +123,15 @@ pathwise_vega <- function(paths,
 
   purrr::map(
     strikes,
-    purrr::in_parallel(
-      \(strike) {
-        indicator <- if (option_type == "call") {
-          terminal_prices > strike
-        } else {
-          terminal_prices < strike
-        }
-        estimator <- discount_factor * sign_multiplier * mean((terminal_prices / volatility) * adjustment * indicator)
-        tibble::tibble(strike = strike, vega_pathwise = estimator)
-      },
-      terminal_prices = terminal_prices,
-      discount_factor = discount_factor,
-      sign_multiplier = sign_multiplier,
-      volatility = volatility,
-      adjustment = adjustment,
-      option_type = option_type
-    )
+    \(strike) {
+      indicator <- if (option_type == "call") {
+        terminal_prices > strike
+      } else {
+        terminal_prices < strike
+      }
+      estimator <- discount_factor * sign_multiplier * mean((terminal_prices / volatility) * adjustment * indicator)
+      tibble::tibble(strike = strike, vega_pathwise = estimator)
+    }
   ) |> purrr::list_rbind()
 }
 
@@ -179,10 +161,8 @@ pathwise_vega <- function(paths,
 #' @return Tibble containing columns `strike`, `delta_pathwise`, `delta_fd`,
 #'   `delta_analytic`, `vega_pathwise`, `vega_fd`, and `vega_analytic`.
 #' @details
-#'   Strike-wise computations run through `purrr::in_parallel()`. Without active
-#'   mirai daemons the routine stays sequential; start workers with
-#'   `mirai::daemons(n)` beforehand and stop them with `mirai::daemons(0)` when
-#'   finished to parallelise the workflow.
+#'   Strike-wise computations execute sequentially. For parallel workflows,
+#'   invoke external purrr or future backends to distribute the strike grid.
 #' @examples
 #' spec <- gbm_spec(initial_value = 100, drift = 0.05, volatility = 0.2)
 #' compare_with_finite_diff(spec, strikes = 100, maturity = 1, n_paths = 10000, n_steps = 128)
@@ -266,47 +246,57 @@ compare_with_finite_diff <- function(process_spec,
     exp(-risk_free_rate * maturity) * mean(payoff)
   }
 
-  simulate_gbm <- function(initial, vol) {
-    gbm_spec(
-      initial_value = initial,
+  gbm_engine <- simulate_paths.gbm_spec
+
+  scenario_prices <- function(init_price, vol_level) {
+    spec <- gbm_spec(
+      initial_value = init_price,
       drift = risk_free_rate,
-      volatility = vol
-    ) |>
-      run_simulation()
+      volatility = vol_level
+    )
+
+    paths_tbl <- if (is.null(seed)) {
+      gbm_engine(
+        process_spec = spec,
+        n_paths = n_paths,
+        n_steps = n_steps,
+        maturity = maturity
+      )
+    } else {
+      gbm_engine(
+        process_spec = spec,
+        n_paths = n_paths,
+        n_steps = n_steps,
+        maturity = maturity,
+        seed = seed
+      )
+    }
+
+    purrr::map_dbl(
+      strikes,
+      \(strike) mc_price(paths_tbl, strike, option_type, maturity, risk_free_rate)
+    )
   }
 
   if (bump_spot > 0) {
     if (initial_price - bump_spot <= 0) {
       rlang::abort("Initial price minus bump_spot must remain positive")
     }
-    paths_up <- simulate_gbm(initial_price + bump_spot, volatility)
-    paths_down <- simulate_gbm(initial_price - bump_spot, volatility)
-    price_spot_up <- purrr::map_dbl(
-      strikes,
-      purrr::in_parallel(
-        \(strike) {
-          mc_price(paths_up, strike, option_type, maturity, risk_free_rate)
-        },
-        paths_up = paths_up,
-        option_type = option_type,
-        maturity = maturity,
-        risk_free_rate = risk_free_rate,
-        mc_price = mc_price
-      )
+
+    spot_scenarios <- list(
+      list(initial = initial_price + bump_spot, volatility = volatility),
+      list(initial = initial_price - bump_spot, volatility = volatility)
     )
-    price_spot_down <- purrr::map_dbl(
-      strikes,
-      purrr::in_parallel(
-        \(strike) {
-          mc_price(paths_down, strike, option_type, maturity, risk_free_rate)
-        },
-        paths_down = paths_down,
-        option_type = option_type,
-        maturity = maturity,
-        risk_free_rate = risk_free_rate,
-        mc_price = mc_price
-      )
+
+    spot_prices <- purrr::map(
+      spot_scenarios,
+      \(scenario) {
+        scenario_prices(scenario$initial, scenario$volatility)
+      }
     )
+
+    price_spot_up <- spot_prices[[1]]
+    price_spot_down <- spot_prices[[2]]
     delta_fd_vec <- (price_spot_up - price_spot_down) / (2 * bump_spot)
   } else {
     delta_fd_vec <- rep(NA_real_, length(strikes))
@@ -316,62 +306,38 @@ compare_with_finite_diff <- function(process_spec,
     if (volatility - bump_vol <= 0) {
       rlang::abort("Volatility minus bump_vol must remain positive")
     }
-    paths_vol_up <- simulate_gbm(initial_price, volatility + bump_vol)
-    paths_vol_down <- simulate_gbm(initial_price, volatility - bump_vol)
-    price_vol_up <- purrr::map_dbl(
-      strikes,
-      purrr::in_parallel(
-        \(strike) {
-          mc_price(paths_vol_up, strike, option_type, maturity, risk_free_rate)
-        },
-        paths_vol_up = paths_vol_up,
-        option_type = option_type,
-        maturity = maturity,
-        risk_free_rate = risk_free_rate,
-        mc_price = mc_price
-      )
+
+    vol_scenarios <- list(
+      list(initial = initial_price, volatility = volatility + bump_vol),
+      list(initial = initial_price, volatility = volatility - bump_vol)
     )
-    price_vol_down <- purrr::map_dbl(
-      strikes,
-      purrr::in_parallel(
-        \(strike) {
-          mc_price(paths_vol_down, strike, option_type, maturity, risk_free_rate)
-        },
-        paths_vol_down = paths_vol_down,
-        option_type = option_type,
-        maturity = maturity,
-        risk_free_rate = risk_free_rate,
-        mc_price = mc_price
-      )
+
+    vol_prices <- purrr::map(
+      vol_scenarios,
+      \(scenario) {
+        scenario_prices(scenario$initial, scenario$volatility)
+      }
     )
+
+    price_vol_up <- vol_prices[[1]]
+    price_vol_down <- vol_prices[[2]]
     vega_fd_vec <- (price_vol_up - price_vol_down) / (2 * bump_vol)
   } else {
     vega_fd_vec <- rep(NA_real_, length(strikes))
   }
 
-  price_options_fn <- price_options.black_scholes_spec
-
   analytic_greeks <- purrr::map(
     strikes,
-    purrr::in_parallel(
-      \(strike) {
-        bs_spec <- black_scholes_spec(
-          option_type = option_type,
-          strike = strike,
-          maturity = maturity,
-          risk_free_rate = risk_free_rate
-        )
-        price_options_fn(bs_spec, spot = initial_price, volatility = volatility) |>
-          dplyr::mutate(strike = strike)
-      },
-      option_type = option_type,
-      maturity = maturity,
-      risk_free_rate = risk_free_rate,
-      initial_price = initial_price,
-      volatility = volatility,
-      black_scholes_spec = black_scholes_spec,
-      price_options_fn = price_options.black_scholes_spec
-    )
+    \(strike) {
+      bs_spec <- black_scholes_spec(
+        option_type = option_type,
+        strike = strike,
+        maturity = maturity,
+        risk_free_rate = risk_free_rate
+      )
+      price_options.black_scholes_spec(bs_spec, spot = initial_price, volatility = volatility) |>
+        dplyr::mutate(strike = strike)
+    }
   ) |> purrr::list_rbind()
 
   delta_pw |>

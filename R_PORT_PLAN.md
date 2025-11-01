@@ -120,6 +120,8 @@ generate_gbm_paths <- function(n_paths, n_steps, maturity,
 
 ### Phase 2: Advanced Models (Priority 2)
 
+_Status: Complete (2025-11-04)_
+
 #### 2.1 Heston Model
 **Files**: 
 - `R/heston_simulation.R` - Path generation
@@ -174,7 +176,11 @@ generate_gbm_paths <- function(n_paths, n_steps, maturity,
 - `Lecture 09/EulerConvergence_GBM.py`
 - `Lecture 09/MilsteinConvergence_GBM.py`
 
+> Deliverables implemented: Heston/Merton/Bates specs with COS pricing, convergence utilities, and associated tests are in place. Proceeding to Phase 3 feature work.
+
 ### Phase 3: Greeks & Hedging (Priority 3)
+
+_Status: Complete (2025-11-04)_
 
 #### 3.1 Implied Volatility
 **File**: `R/implied_volatility.R`
@@ -197,11 +203,15 @@ generate_gbm_paths <- function(n_paths, n_steps, maturity,
 - `R/delta_hedging_bs.R` - BS delta hedging
 - `R/delta_hedging_jumps.R` - Hedging with jumps
 
+> Deliverables implemented: Implied volatility solvers, volatility smile plotting, pathwise sensitivities with finite-difference validation, and documentation updates. Discrete-time Black-Scholes hedging with transaction costs and jump-diffusion diagnostics now implemented with accompanying regression tests.
+
 **Python sources**:
 - `Lecture 11/BS_Hedging.py`
 - `Lecture 11/HedgingWithJumps.py`
 
 ### Phase 4: Exotic Options (Priority 4)
+
+_Status: Complete (2025-11-05)_
 
 #### 4.1 Asian Options
 **File**: `R/asian_options.R`
@@ -209,12 +219,16 @@ generate_gbm_paths <- function(n_paths, n_steps, maturity,
 - `price_asian_put()` - Put options
 - `asian_variance_reduction()` - Control variates
 
+> Progress 2025-11-04: Implemented Monte Carlo pricing with antithetic variance reduction and added regression tests.
+
 **Python source**: `Lecture 13/AsianOption.py`
 
 #### 4.2 Barrier Options
 **File**: `R/barrier_options.R`
-- `price_barrier_option()` - Up-and-out, down-and-out
+- `price_barrier_option()` - Up/down, in/out pricing
 - `barrier_hit_probability()` - Analysis
+
+> Progress 2025-11-04: Added Monte Carlo pricing for barrier structures with complementarity checks and barrier hit probability estimator plus regression tests.
 
 **Python source**: `Lecture 13/DigitalPayoffs_CostReduction.py` (partial)
 
@@ -226,12 +240,16 @@ generate_gbm_paths <- function(n_paths, n_steps, maturity,
 
 **Python source**: `Lecture 08/CashOrNothing_COS_Method.py`
 
+> Progress 2025-11-05: Added Black-Scholes closed-form pricing, COS density integration, probability clamping, and regression tests spanning analytic parity and Fourier accuracy.
+
 #### 4.4 Forward Start Options
 **File**: `R/forward_start_options.R`
 - `price_forward_start_heston()` - Forward start under Heston
 - `forward_start_characteristic_function()`
 
 **Python source**: `Lecture 12/HestonForwardStart2.py`
+
+> Progress 2025-11-05: Implemented Heston forward-start characteristic function, COS pricing pipeline, and Monte Carlo regression tests; Phase 4 feature set complete.
 
 ### Phase 5: Package Infrastructure (Priority 5)
 

@@ -221,19 +221,14 @@ simulate_bates_euler <- function(process_spec, n_paths, n_steps, maturity, seed)
 
   paths_tidy <- purrr::map(
     seq_len(n_paths),
-    purrr::in_parallel(
-      \(path_idx) {
-        tibble::tibble(
-          path_id = path_idx,
-          time = time_grid,
-          stock_price = stock_matrix[path_idx, ],
-          variance = variance_matrix[path_idx, ]
-        )
-      },
-      time_grid = time_grid,
-      stock_matrix = stock_matrix,
-      variance_matrix = variance_matrix
-    )
+    \(path_idx) {
+      tibble::tibble(
+        path_id = path_idx,
+        time = time_grid,
+        stock_price = stock_matrix[path_idx, ],
+        variance = variance_matrix[path_idx, ]
+      )
+    }
   ) |> purrr::list_rbind()
 
   attr(paths_tidy, "process_type") <- "bates"
@@ -312,19 +307,14 @@ simulate_bates_aes <- function(process_spec, n_paths, n_steps, maturity, seed) {
 
   paths_tidy <- purrr::map(
     seq_len(n_paths),
-    purrr::in_parallel(
-      \(path_idx) {
-        tibble::tibble(
-          path_id = path_idx,
-          time = time_grid,
-          stock_price = stock_matrix[path_idx, ],
-          variance = variance_matrix[path_idx, ]
-        )
-      },
-      time_grid = time_grid,
-      stock_matrix = stock_matrix,
-      variance_matrix = variance_matrix
-    )
+    \(path_idx) {
+      tibble::tibble(
+        path_id = path_idx,
+        time = time_grid,
+        stock_price = stock_matrix[path_idx, ],
+        variance = variance_matrix[path_idx, ]
+      )
+    }
   ) |> purrr::list_rbind()
 
   attr(paths_tidy, "process_type") <- "bates"
@@ -539,20 +529,15 @@ bates_implied_volatility <- function(process_spec,
         expansion <- c(2, 5, 10)
         expansion_results <- purrr::map(
           expansion,
-          purrr::in_parallel(
-            \(mult) {
-              candidate <- vol_interval[2] * mult
-              f_candidate <- pricing_difference(candidate)
-              tibble::tibble(
-                candidate = candidate,
-                f_candidate = f_candidate,
-                should_update = f_lower * f_candidate <= 0
-              )
-            },
-            vol_interval = vol_interval,
-            pricing_difference = pricing_difference,
-            f_lower = f_lower
-          )
+          \(mult) {
+            candidate <- vol_interval[2] * mult
+            f_candidate <- pricing_difference(candidate)
+            tibble::tibble(
+              candidate = candidate,
+              f_candidate = f_candidate,
+              should_update = f_lower * f_candidate <= 0
+            )
+          }
         ) |> purrr::list_rbind()
 
         valid_candidate <- expansion_results |>

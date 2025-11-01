@@ -194,19 +194,14 @@ matrix_to_tidy <- function(value_matrix, time_grid, value_name = "value") {
   # Using anonymous function \(x) syntax (R >= 4.1.0)
   path_tibbles <- purrr::map(
     seq_len(n_paths),
-    purrr::in_parallel(
-      \(i) {
-        path_tbl <- tibble::tibble(
-          path_id = i,
-          time = time_grid,
-          value = value_matrix[i, ]
-        )
-        stats::setNames(path_tbl, c("path_id", "time", value_name))
-      },
-      value_matrix = value_matrix,
-      time_grid = time_grid,
-      value_name = value_name
-    )
+    \(i) {
+      path_tbl <- tibble::tibble(
+        path_id = i,
+        time = time_grid,
+        value = value_matrix[i, ]
+      )
+      stats::setNames(path_tbl, c("path_id", "time", value_name))
+    }
   )
 
   # Use modern list_rbind instead of map_dfr

@@ -214,19 +214,23 @@ compute_implied_volatility <- function(option_data,
   implied <- purrr::map2_dbl(
     option_tbl$price,
     option_tbl$strike,
-    ~ solve_implied_volatility(
-      option_type = option_type,
-      target_price = .x,
-      strike = .y,
-      spot = spot,
-      maturity = maturity,
-      risk_free_rate = risk_free_rate,
-      dividend_yield = dividend_yield,
-      lower = lower,
-      upper = upper,
-      tol = tol,
-      max_iter = max_iter
-    )
+    \(target_price, strike) {
+      solve_implied_volatility(
+        option_type = option_type,
+        target_price = target_price,
+        strike = strike,
+        spot = spot,
+        maturity = maturity,
+        risk_free_rate = risk_free_rate,
+        dividend_yield = dividend_yield,
+        lower = lower,
+        upper = upper,
+        tol = tol,
+        max_iter = max_iter,
+        price_options_fn = price_options.black_scholes_spec,
+        black_scholes_spec_fn = black_scholes_spec
+      )
+    }
   )
 
   dplyr::mutate(option_tbl, implied_volatility = implied)
@@ -242,7 +246,9 @@ solve_implied_volatility <- function(option_type,
                                      lower,
                                      upper,
                                      tol,
-                                     max_iter) {
+                                     max_iter,
+                                     price_options_fn = price_options.black_scholes_spec,
+                                     black_scholes_spec_fn = black_scholes_spec) {
   forward_factor <- exp(-dividend_yield * maturity)
   discount_factor <- exp(-risk_free_rate * maturity)
 
@@ -261,7 +267,7 @@ solve_implied_volatility <- function(option_type,
     return(NA_real_)
   }
 
-  bs_spec <- black_scholes_spec(
+  bs_spec <- black_scholes_spec_fn(
     option_type = option_type,
     strike = strike,
     maturity = maturity,
@@ -270,7 +276,7 @@ solve_implied_volatility <- function(option_type,
   )
 
   pricing_difference <- function(vol) {
-    price_options(bs_spec, spot = spot, volatility = vol)$price - target_price
+    price_options_fn(bs_spec, spot = spot, volatility = vol)$price - target_price
   }
 
   lower_eval <- pricing_difference(lower)

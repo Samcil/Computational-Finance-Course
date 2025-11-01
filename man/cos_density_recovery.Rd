@@ -4,7 +4,15 @@
 \alias{cos_density_recovery}
 \title{Recover Probability Densities via COS Expansion}
 \usage{
-cos_density_recovery(cf, x, maturity, n_terms = 256L, truncation = 8)
+cos_density_recovery(
+  cf,
+  x,
+  maturity,
+  n_terms = 256L,
+  truncation = 8,
+  lower_bound = NULL,
+  upper_bound = NULL
+)
 }
 \arguments{
 \item{cf}{Function returning characteristic function values.}
@@ -18,6 +26,14 @@ variable (used to scale the truncation interval).}
 
 \item{truncation}{Numeric scalar controlling the truncation domain. Default is
 8.}
+
+\item{lower_bound}{Optional numeric scalar specifying the lower limit of the
+truncated integration domain. Must be supplied together with
+\code{upper_bound}.}
+
+\item{upper_bound}{Optional numeric scalar specifying the upper limit of the
+truncated integration domain. Must be supplied together with
+\code{lower_bound}.}
 }
 \value{
 A tibble with columns \code{x} and \code{density}.
