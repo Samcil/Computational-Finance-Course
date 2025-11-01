@@ -23,6 +23,7 @@ Imports:
     purrr (>= 0.3.0),
     tidyr (>= 1.1.0),
     rlang (>= 0.4.0),
+    checkmate (>= 2.0.0),
     MASS,
     stats
 Suggests:

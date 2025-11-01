@@ -38,6 +38,8 @@
 #' For multiple paths, the normal samples are standardized at each time step
 #' to ensure mean 0 and variance 1.
 #'
+#' Uses purrr for functional programming and checkmate for robust input validation.
+#'
 #' @examples
 #' # Simulate 100 paths over 1 year with 252 time steps
 #' paths_tidy <- generate_gbm_abm_paths(
@@ -62,62 +64,69 @@
 #'
 #' @export
 generate_gbm_abm_paths <- function(n_paths,
-                                     n_steps,
-                                     maturity,
-                                     interest_rate,
-                                     volatility,
-                                     initial_price,
-                                     seed = 123,
-                                     return_format = c("tidy", "matrix")) {
+                                    n_steps,
+                                    maturity,
+                                    interest_rate,
+                                    volatility,
+                                    initial_price,
+                                    seed = 123,
+                                    return_format = c("tidy", "matrix")) {
   
-  # Input validation
-  stopifnot(
-    is.numeric(n_paths), n_paths > 0, n_paths == floor(n_paths),
-    is.numeric(n_steps), n_steps > 0, n_steps == floor(n_steps),
-    is.numeric(maturity), maturity > 0,
-    is.numeric(interest_rate),
-    is.numeric(volatility), volatility > 0,
-    is.numeric(initial_price), initial_price > 0,
-    is.numeric(seed), seed == floor(seed)
-  )
-  
+  # Input validation using checkmate
+  checkmate::assert_int(n_paths, lower = 1)
+  checkmate::assert_int(n_steps, lower = 1)
+  checkmate::assert_number(maturity, lower = 0, finite = TRUE)
+  checkmate::assert_number(interest_rate, finite = TRUE)
+  checkmate::assert_number(volatility, lower = 0, finite = TRUE)
+  checkmate::assert_number(initial_price, lower = 0, finite = TRUE)
+  checkmate::assert_int(seed)
   return_format <- match.arg(return_format)
   
   # Set random seed for reproducibility
   set.seed(seed)
   
-  # Initialize matrices
-  Z <- matrix(stats::rnorm(n_paths * n_steps, mean = 0, sd = 1),
-              nrow = n_paths, ncol = n_steps)
-  X <- matrix(0, nrow = n_paths, ncol = n_steps + 1)
-  S <- matrix(0, nrow = n_paths, ncol = n_steps + 1)
-  time_grid <- numeric(n_steps + 1)
-  
-  # Initial conditions
-  X[, 1] <- log(initial_price)
-  time_grid[1] <- 0
-  
   # Time step size
   dt <- maturity / n_steps
   
-  # Euler-Maruyama discretization
-  for (i in seq_len(n_steps)) {
-    # Standardize normal samples to have mean 0 and variance 1
-    if (n_paths > 1) {
-      Z[, i] <- (Z[, i] - mean(Z[, i])) / stats::sd(Z[, i])
-    }
-    
-    # ABM update: dX(t) = (r - 0.5*sigma^2)*dt + sigma*dW(t)
-    X[, i + 1] <- X[, i] + 
-      (interest_rate - 0.5 * volatility^2) * dt + 
-      volatility * sqrt(dt) * Z[, i]
-    
-    # Update time grid
-    time_grid[i + 1] <- time_grid[i] + dt
+  # Generate random normal samples
+  Z <- matrix(stats::rnorm(n_paths * n_steps, mean = 0, sd = 1),
+              nrow = n_paths, ncol = n_steps)
+  
+  # Standardize each column using purrr::map_dfc
+  if (n_paths > 1) {
+    Z <- purrr::map_dfc(
+      seq_len(n_steps),
+      ~ {
+        z_col <- Z[, .x]
+        (z_col - mean(z_col)) / stats::sd(z_col)
+      }
+    ) |>
+      as.matrix()
   }
+  
+  # Initialize with initial condition
+  X_initial <- rep(log(initial_price), n_paths)
+  
+  # Compute increments using purrr::accumulate
+  # Each step adds drift + diffusion
+  X_list <- purrr::accumulate(
+    seq_len(n_steps),
+    function(x_prev, step_idx) {
+      x_prev + 
+        (interest_rate - 0.5 * volatility^2) * dt + 
+        volatility * sqrt(dt) * Z[, step_idx]
+    },
+    .init = X_initial
+  )
+  
+  # Convert list to matrix (each element is a vector of all paths at time t)
+  X <- do.call(cbind, X_list)
   
   # Convert ABM to GBM: S(t) = exp(X(t))
   S <- exp(X)
+  
+  # Time grid using purrr::map_dbl
+  time_grid <- purrr::map_dbl(0:n_steps, ~ .x * dt)
   
   # Return in requested format
   if (return_format == "matrix") {
@@ -127,12 +136,15 @@ generate_gbm_abm_paths <- function(n_paths,
       stock_price = S
     ))
   } else {
-    # Convert to tidy format (long form tibble)
-    paths_tidy <- tibble::tibble(
-      path_id = rep(seq_len(n_paths), each = n_steps + 1),
-      time = rep(time_grid, times = n_paths),
-      log_price = as.vector(t(X)),
-      stock_price = as.vector(t(S))
+    # Convert to tidy format using purrr::map_dfr
+    paths_tidy <- purrr::map_dfr(
+      seq_len(n_paths),
+      ~ tibble::tibble(
+        path_id = .x,
+        time = time_grid,
+        log_price = X[.x, ],
+        stock_price = S[.x, ]
+      )
     )
     
     return(paths_tidy)
@@ -171,24 +183,28 @@ generate_gbm_abm_paths <- function(n_paths,
 #'
 #' @export
 plot_gbm_abm_paths <- function(paths_data,
-                                 plot_type = c("both", "gbm", "abm"),
-                                 max_paths = 25,
-                                 theme = c("minimal", "classic", "bw")) {
+                                plot_type = c("both", "gbm", "abm"),
+                                max_paths = 25,
+                                theme = c("minimal", "classic", "bw")) {
   
+  # Input validation using checkmate
+  checkmate::assert_int(max_paths, lower = 1)
   plot_type <- match.arg(plot_type)
   theme <- match.arg(theme)
   
   # Convert to tidy format if needed
   if (is.list(paths_data) && !tibble::is_tibble(paths_data)) {
-    # Convert matrix format to tidy
+    # Convert matrix format to tidy using purrr::map_dfr
     n_paths <- nrow(paths_data$log_price)
-    n_steps <- ncol(paths_data$log_price) - 1
     
-    paths_data <- tibble::tibble(
-      path_id = rep(seq_len(n_paths), each = n_steps + 1),
-      time = rep(paths_data$time, times = n_paths),
-      log_price = as.vector(t(paths_data$log_price)),
-      stock_price = as.vector(t(paths_data$stock_price))
+    paths_data <- purrr::map_dfr(
+      seq_len(n_paths),
+      ~ tibble::tibble(
+        path_id = .x,
+        time = paths_data$time,
+        log_price = paths_data$log_price[.x, ],
+        stock_price = paths_data$stock_price[.x, ]
+      )
     )
   }
   
@@ -206,44 +222,51 @@ plot_gbm_abm_paths <- function(paths_data,
                        "classic" = ggplot2::theme_classic(),
                        "bw" = ggplot2::theme_bw())
   
-  # Create plots
-  plots <- list()
+  # Create plots using purrr::map
+  plot_specs <- list(
+    abm = list(
+      y_var = "log_price",
+      y_lab = "Log Price X(t)",
+      color = "steelblue",
+      title = "Arithmetic Brownian Motion (ABM) Paths",
+      subtitle = "Simulated paths: X(t) with dX(t) = (r - 0.5σ²)dt + σdW(t)"
+    ),
+    gbm = list(
+      y_var = "stock_price",
+      y_lab = "Stock Price S(t)",
+      color = "darkred",
+      title = "Geometric Brownian Motion (GBM) Paths",
+      subtitle = "Stock price: S(t) = exp(X(t))"
+    )
+  )
   
-  if (plot_type %in% c("both", "abm")) {
-    plot_abm <- ggplot2::ggplot(paths_data, ggplot2::aes(x = time, y = log_price, group = path_id)) +
-      ggplot2::geom_line(alpha = 0.5, color = "steelblue") +
+  # Filter plot specs based on plot_type
+  if (plot_type == "abm") {
+    plot_specs <- plot_specs["abm"]
+  } else if (plot_type == "gbm") {
+    plot_specs <- plot_specs["gbm"]
+  }
+  
+  # Generate plots using purrr::map
+  plots <- purrr::map(
+    plot_specs,
+    ~ ggplot2::ggplot(
+        paths_data, 
+        ggplot2::aes(x = time, y = .data[[.x$y_var]], group = path_id)
+      ) +
+      ggplot2::geom_line(alpha = 0.5, color = .x$color) +
       ggplot2::labs(
-        title = "Arithmetic Brownian Motion (ABM) Paths",
-        subtitle = sprintf("Simulated paths: X(t) with dX(t) = (r - 0.5σ²)dt + σdW(t)"),
+        title = .x$title,
+        subtitle = .x$subtitle,
         x = "Time (years)",
-        y = "Log Price X(t)"
+        y = .x$y_lab
       ) +
       theme_func +
       ggplot2::theme(
         plot.title = ggplot2::element_text(face = "bold", size = 14),
         plot.subtitle = ggplot2::element_text(size = 10)
       )
-    
-    plots$abm <- plot_abm
-  }
-  
-  if (plot_type %in% c("both", "gbm")) {
-    plot_gbm <- ggplot2::ggplot(paths_data, ggplot2::aes(x = time, y = stock_price, group = path_id)) +
-      ggplot2::geom_line(alpha = 0.5, color = "darkred") +
-      ggplot2::labs(
-        title = "Geometric Brownian Motion (GBM) Paths",
-        subtitle = "Stock price: S(t) = exp(X(t))",
-        x = "Time (years)",
-        y = "Stock Price S(t)"
-      ) +
-      theme_func +
-      ggplot2::theme(
-        plot.title = ggplot2::element_text(face = "bold", size = 14),
-        plot.subtitle = ggplot2::element_text(size = 10)
-      )
-    
-    plots$gbm <- plot_gbm
-  }
+  )
   
   # Return single plot or list
   if (length(plots) == 1) {
@@ -286,12 +309,21 @@ plot_gbm_abm_paths <- function(paths_data,
 #'
 #' @export
 demo_gbm_abm_paths <- function(n_paths = 25,
-                                 n_steps = 500,
-                                 maturity = 1.0,
-                                 interest_rate = 0.05,
-                                 volatility = 0.4,
-                                 initial_price = 100,
-                                 plot = TRUE) {
+                                n_steps = 500,
+                                maturity = 1.0,
+                                interest_rate = 0.05,
+                                volatility = 0.4,
+                                initial_price = 100,
+                                plot = TRUE) {
+  
+  # Input validation using checkmate
+  checkmate::assert_int(n_paths, lower = 1)
+  checkmate::assert_int(n_steps, lower = 1)
+  checkmate::assert_number(maturity, lower = 0, finite = TRUE)
+  checkmate::assert_number(interest_rate, finite = TRUE)
+  checkmate::assert_number(volatility, lower = 0, finite = TRUE)
+  checkmate::assert_number(initial_price, lower = 0, finite = TRUE)
+  checkmate::assert_logical(plot, len = 1)
   
   # Generate paths
   paths <- generate_gbm_abm_paths(
