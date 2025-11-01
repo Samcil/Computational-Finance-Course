@@ -1,0 +1,36 @@
+Package: CompFinanceR
+Type: Package
+Title: Computational Finance Tools in R
+Version: 0.1.0
+Authors@R: c(
+    person("Lech", "Grzelak", email = "lech.grzelak@example.com", role = c("aut")),
+    person("Repository", "Contributor", email = "contributor@example.com", role = c("cre", "aut"))
+    )
+Description: A comprehensive R package for computational finance, providing tools for
+    simulating stochastic processes (GBM, Heston, CIR, Merton, Bates), pricing options
+    (European, Asian, Barrier, Digital, Forward Start), computing Greeks, and implementing
+    hedging strategies. All functions follow tidyverse design principles with comprehensive
+    documentation and examples.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.0
+Imports:
+    tibble (>= 3.0.0),
+    dplyr (>= 1.0.0),
+    ggplot2 (>= 3.3.0),
+    purrr (>= 0.3.0),
+    tidyr (>= 1.1.0),
+    rlang (>= 0.4.0),
+    MASS,
+    stats
+Suggests:
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown,
+    withr,
+    covr
+VignetteBuilder: knitr
+URL: https://github.com/Samcil/Computational-Finance-Course
+BugReports: https://github.com/Samcil/Computational-Finance-Course/issues

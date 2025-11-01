@@ -1,0 +1,13 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^LICENSE\.md$
+^README\.Rmd$
+^\.github$
+^codecov\.yml$
+^\.git$
+^\.gitignore$
+^Lecture.*
+^Questions-and-Answers$
+^REFACTORING.*
+^ACHIEVEMENT.*
+^R_PORT_PLAN\.md$
