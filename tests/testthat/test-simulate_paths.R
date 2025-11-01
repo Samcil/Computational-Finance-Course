@@ -166,3 +166,105 @@ test_that("spec print methods work", {
   expect_output(print(gbm), "Geometric")
   expect_output(print(abm), "Arithmetic")
 })
+
+
+# Poisson Process Tests -----------------------------------------------------
+
+test_that("poisson_spec creates valid specification", {
+  spec <- poisson_spec(intensity = 1.0, initial_value = 0)
+  
+  expect_s3_class(spec, "poisson_spec")
+  expect_s3_class(spec, "process_spec")
+  expect_equal(spec$intensity, 1.0)
+  expect_equal(spec$initial_value, 0)
+})
+
+
+test_that("poisson_spec validates parameters", {
+  expect_error(
+    poisson_spec(intensity = -1.0),
+    "intensity"
+  )
+  
+  expect_error(
+    poisson_spec(intensity = NA),
+    "intensity"
+  )
+})
+
+
+test_that("poisson_spec print method works", {
+  spec <- poisson_spec(intensity = 2.0)
+  
+  expect_output(print(spec), "Poisson")
+  expect_output(print(spec), "martingale")
+})
+
+
+test_that("simulate_paths.poisson_spec returns correct structure", {
+  spec <- poisson_spec(intensity = 1.0)
+  paths <- simulate_paths(spec, n_paths = 10, n_steps = 100, maturity = 10)
+  
+  expect_s3_class(paths, "tbl_df")
+  expect_named(paths, c("path_id", "time", "count", "compensated_count"))
+  expect_equal(length(unique(paths$path_id)), 10)
+  expect_equal(nrow(paths), 10 * 101)  # 10 paths * 101 time points
+})
+
+
+test_that("poisson process starts at initial value", {
+  spec <- poisson_spec(intensity = 1.0, initial_value = 5)
+  paths <- simulate_paths(spec, n_paths = 10, n_steps = 100, maturity = 10)
+  
+  initial_counts <- paths[paths$time == 0, "count", drop = TRUE]
+  expect_true(all(initial_counts == 5))
+})
+
+
+test_that("compensated poisson process has zero mean", {
+  spec <- poisson_spec(intensity = 1.0)
+  paths <- simulate_paths(spec, n_paths = 1000, n_steps = 100, maturity = 10, seed = 42)
+  
+  # At final time, compensated process should have mean ≈ 0
+  final_compensated <- paths[paths$time == 10, "compensated_count", drop = TRUE]
+  mean_final <- mean(final_compensated)
+  
+  # Should be close to 0 (within 0.2 for 1000 paths)
+  expect_lt(abs(mean_final), 0.2)
+})
+
+
+test_that("poisson intensity affects jump frequency", {
+  # Low intensity
+  spec_low <- poisson_spec(intensity = 0.5)
+  paths_low <- simulate_paths(spec_low, n_paths = 100, n_steps = 100, maturity = 10, seed = 123)
+  final_low <- paths_low[paths_low$time == 10, "count", drop = TRUE]
+  mean_low <- mean(final_low)
+  
+  # High intensity
+  spec_high <- poisson_spec(intensity = 2.0)
+  paths_high <- simulate_paths(spec_high, n_paths = 100, n_steps = 100, maturity = 10, seed = 123)
+  final_high <- paths_high[paths_high$time == 10, "count", drop = TRUE]
+  mean_high <- mean(final_high)
+  
+  # Higher intensity should give more jumps
+  expect_gt(mean_high, mean_low)
+  
+  # Should be close to theoretical E[N(T)] = λT
+  expect_lt(abs(mean_low - 0.5 * 10), 2)  # ≈ 5
+  expect_lt(abs(mean_high - 2.0 * 10), 3)  # ≈ 20
+})
+
+
+test_that("poisson process pipeline works", {
+  result <- poisson_spec(1.5) |>
+    simulate_paths(n_paths = 20, n_steps = 200, maturity = 15) |>
+    dplyr::filter(path_id <= 5) |>
+    dplyr::select(path_id, time, count, compensated_count)
+  
+  expect_s3_class(result, "tbl_df")
+  expect_equal(length(unique(result$path_id)), 5)
+  expect_true(all(result$path_id <= 5))
+  expect_true("count" %in% names(result))
+  expect_true("compensated_count" %in% names(result))
+})

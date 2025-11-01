@@ -6,6 +6,7 @@
 #'
 #' @param paths_data Tibble. Output from \code{simulate_paths()}.
 #' @param n_paths_plot Integer. Maximum number of paths to plot. Default is NULL (all paths).
+#' @param plot_type Character. For Poisson: "standard" or "compensated". Ignored for other processes.
 #' @param alpha Numeric. Transparency level for path lines (0 to 1). Default is 0.3.
 #' @param theme Character. ggplot2 theme to use. One of "minimal", "classic", "bw". Default is "minimal".
 #'
@@ -14,7 +15,8 @@
 #' @details
 #' The function automatically detects the process type from the paths_data attributes
 #' and applies appropriate labels and styling. For GBM processes, it includes the
-#' SDE equation in the subtitle.
+#' SDE equation in the subtitle. For Poisson processes, use `plot_type` to choose
+#' between standard or compensated processes.
 #'
 #' @examples
 #' # Simulate and plot GBM
@@ -22,9 +24,15 @@
 #'   simulate_paths(n_paths = 50, n_steps = 252, maturity = 1) |>
 #'   plot_paths(n_paths_plot = 10)
 #'
+#' # Simulate and plot Poisson
+#' poisson_spec(1.0) |>
+#'   simulate_paths(25, 500, 30) |>
+#'   plot_paths(plot_type = "compensated")
+#'
 #' @export
 plot_paths <- function(paths_data,
                        n_paths_plot = NULL,
+                       plot_type = c("standard", "compensated"),
                        alpha = 0.3,
                        theme = c("minimal", "classic", "bw")) {
   
@@ -33,6 +41,7 @@ plot_paths <- function(paths_data,
   checkmate::assert_data_frame(paths_data)
   checkmate::assert_integerish(n_paths_plot, lower = 1, len = 1, null.ok = TRUE, any.missing = FALSE)
   checkmate::assert_number(alpha, lower = 0, upper = 1)
+  plot_type <- match.arg(plot_type)
   theme <- match.arg(theme)
   
   # Coerce to integer for internal use
@@ -42,7 +51,7 @@ plot_paths <- function(paths_data,
   
   # Get process type from attributes
   process_type <- attr(paths_data, "process_type")
-  spec <- attr(paths_data, "spec")
+  intensity <- attr(paths_data, "intensity")
   
   # Filter paths if requested
   if (!is.null(n_paths_plot)) {
@@ -51,15 +60,17 @@ plot_paths <- function(paths_data,
     paths_data <- dplyr::filter(paths_data, path_id <= paths_to_plot)
   }
   
-  # Determine value column name
-  value_col <- if ("stock_price" %in% names(paths_data)) {
-    "stock_price"
+  # Determine value column name based on process type and plot_type
+  if (process_type == "poisson") {
+    value_col <- if (plot_type == "compensated") "compensated_count" else "count"
+  } else if ("stock_price" %in% names(paths_data)) {
+    value_col <- "stock_price"
   } else {
-    "value"
+    value_col <- "value"
   }
   
   # Create appropriate labels based on process type
-  plot_config <- get_plot_config(process_type, spec)
+  plot_config <- get_plot_config(process_type, intensity, plot_type)
   
   # Create base plot
   p <- ggplot2::ggplot(
@@ -77,6 +88,29 @@ plot_paths <- function(paths_data,
       x = "Time (years)",
       y = plot_config$y_label
     )
+  
+  # Add expected value line for Poisson processes
+  if (process_type == "poisson") {
+    if (plot_type == "standard") {
+      # E[N(t)] = λt
+      p <- p + ggplot2::geom_line(
+        data = data.frame(time = unique(paths_data$time)),
+        ggplot2::aes(x = time, y = intensity * time),
+        color = "red",
+        linetype = "dashed",
+        linewidth = 1,
+        inherit.aes = FALSE
+      )
+    } else {
+      # E[Ñ(t)] = 0
+      p <- p + ggplot2::geom_hline(
+        yintercept = 0,
+        color = "red",
+        linetype = "dashed",
+        linewidth = 1
+      )
+    }
+  }
   
   # Apply theme
   p <- p + switch(
@@ -104,33 +138,50 @@ plot_paths <- function(paths_data,
 #' Returns appropriate plot labels and colors based on process type.
 #'
 #' @param process_type Character. Type of stochastic process.
-#' @param spec Process specification object.
+#' @param intensity Numeric. Intensity parameter for Poisson process.
+#' @param plot_type Character. Type of plot (for Poisson: "standard" or "compensated").
 #'
 #' @return List with title, subtitle, y_label, and color.
 #'
 #' @keywords internal
-get_plot_config <- function(process_type, spec) {
+get_plot_config <- function(process_type, intensity = NULL, plot_type = "standard") {
   
   if (is.null(process_type) || process_type == "gbm") {
     list(
       title = "Geometric Brownian Motion Paths",
-      subtitle = sprintf(
-        "dS(t) = \u03bc S(t) dt + \u03c3 S(t) dW(t)  |  \u03bc = %.4f, \u03c3 = %.4f, S\u2080 = %.2f",
-        spec$drift, spec$volatility, spec$initial_value
-      ),
+      subtitle = "dS(t) = \u03bc S(t) dt + \u03c3 S(t) dW(t)",
       y_label = "Stock Price S(t)",
       color = "steelblue"
     )
   } else if (process_type == "abm") {
     list(
       title = "Arithmetic Brownian Motion Paths",
-      subtitle = sprintf(
-        "dX(t) = \u03bc dt + \u03c3 dW(t)  |  \u03bc = %.4f, \u03c3 = %.4f, X\u2080 = %.2f",
-        spec$drift, spec$volatility, spec$initial_value
-      ),
+      subtitle = "dX(t) = \u03bc dt + \u03c3 dW(t)",
       y_label = "Process Value X(t)",
       color = "darkred"
     )
+  } else if (process_type == "poisson") {
+    if (plot_type == "compensated") {
+      list(
+        title = "Compensated Poisson Process Paths",
+        subtitle = sprintf(
+          "\u00d1(t) = N(t) - \u03bbt  |  \u03bb = %.2f (martingale)",
+          intensity
+        ),
+        y_label = "Compensated Count \u00d1(t)",
+        color = "darkgreen"
+      )
+    } else {
+      list(
+        title = "Poisson Process Paths",
+        subtitle = sprintf(
+          "N(t) ~ Poisson(\u03bbt)  |  \u03bb = %.2f",
+          intensity
+        ),
+        y_label = "Count N(t)",
+        color = "darkorange"
+      )
+    }
   } else {
     # Default
     list(
