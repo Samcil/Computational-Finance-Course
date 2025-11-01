@@ -42,7 +42,7 @@ cir_spec <- function(initial_value, mean_reversion, long_term_mean, volatility) 
   checkmate::assert_number(mean_reversion, lower = 0, finite = TRUE)
   checkmate::assert_number(long_term_mean, lower = 0, finite = TRUE)
   checkmate::assert_number(volatility, lower = 0, finite = TRUE)
-  
+
   # Feller condition check
   feller <- 2 * mean_reversion * long_term_mean
   if (feller < volatility^2) {
@@ -51,7 +51,7 @@ cir_spec <- function(initial_value, mean_reversion, long_term_mean, volatility) 
     )
     cli::cli_alert_info("Process may reach zero with positive probability")
   }
-  
+
   structure(
     list(
       initial_value = initial_value,
@@ -97,61 +97,61 @@ print.cir_spec <- function(x, ...) {
 #' @return A tibble with columns: path_id, time, variance.
 #'
 #' @export
-simulate_paths.cir_spec <- function(process_spec, n_paths, n_steps, maturity, seed = 123) {
+simulate_paths.cir_spec <- function(process_spec, n_paths, n_steps, maturity, seed = 123, ...) {
   # Validation
   checkmate::assert_integerish(n_paths, lower = 1, len = 1)
   checkmate::assert_integerish(n_steps, lower = 1, len = 1)
   checkmate::assert_number(maturity, lower = 0, finite = TRUE)
   checkmate::assert_integerish(seed, len = 1)
-  
+
   # Coercion
   n_paths <- as.integer(n_paths)
   n_steps <- as.integer(n_steps)
   seed <- as.integer(seed)
-  
+
   # Set seed
   set.seed(seed)
-  
+
   # Time grid
   dt <- maturity / n_steps
   time_grid <- seq(0, maturity, length.out = n_steps + 1)
-  
+
   # Extract parameters
   v0 <- process_spec$initial_value
   kappa <- process_spec$mean_reversion
   theta <- process_spec$long_term_mean
   sigma <- process_spec$volatility
-  
-  # Generate random increments
-  dW <- matrix(stats::rnorm(n_paths * n_steps, 0, sqrt(dt)), 
-               nrow = n_paths, ncol = n_steps)
-  
-  # Euler scheme with reflection at zero
-  v_matrix <- matrix(0, nrow = n_paths, ncol = n_steps + 1)
-  v_matrix[, 1] <- v0
-  
-  for (i in seq_len(n_steps)) {
-    v_prev <- pmax(v_matrix[, i], 0)  # Ensure non-negative
-    drift <- kappa * (theta - v_prev) * dt
-    diffusion <- sigma * sqrt(v_prev) * dW[, i]
-    v_matrix[, i + 1] <- pmax(v_prev + drift + diffusion, 0)  # Reflection
-  }
-  
-  # Convert to tidy format
-  paths_tidy <- purrr::map_dfr(
-    seq_len(n_paths),
-    \(path_idx) {
-      tibble::tibble(
-        path_id = path_idx,
-        time = time_grid,
-        variance = v_matrix[path_idx, ]
-      )
+
+  # Generate Brownian increments (scaled by sqrt(dt))
+  dW <- matrix(
+    stats::rnorm(n_paths * n_steps),
+    nrow = n_paths,
+    ncol = n_steps
+  ) * sqrt(dt)
+
+  # Functional Euler-Maruyama with reflection at zero
+  variance_history <- purrr::accumulate(
+    .x = seq_len(n_steps),
+    .init = rep(v0, n_paths),
+    .f = \(state, step_idx) {
+      v_prev <- pmax(state, 0)
+      drift <- kappa * (theta - v_prev) * dt
+      diffusion <- sigma * sqrt(v_prev) * dW[, step_idx]
+      pmax(v_prev + drift + diffusion, 0)
     }
   )
-  
+
+  variance_matrix <- do.call(cbind, variance_history) |> as.matrix()
+
+  paths_tidy <- matrix_to_tidy(
+    value_matrix = variance_matrix,
+    time_grid = time_grid,
+    value_name = "variance"
+  )
+
   # Add process type attribute
   attr(paths_tidy, "process_type") <- "cir"
   attr(paths_tidy, "long_term_mean") <- theta
-  
+
   paths_tidy
 }

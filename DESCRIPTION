@@ -16,14 +16,14 @@ License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.2.0
+RoxygenNote: 7.3.3
 Depends:
     R (>= 4.1.0)
 Imports:
     tibble (>= 3.0.0),
     dplyr (>= 1.0.0),
     ggplot2 (>= 3.3.0),
-    purrr (>= 1.0.0),
+    purrr (>= 1.1.0),
     tidyr (>= 1.1.0),
     rlang (>= 1.0.0),
     checkmate (>= 2.0.0),
@@ -35,7 +35,8 @@ Suggests:
     knitr,
     rmarkdown,
     withr,
-    covr
+    covr,
+    mirai
 VignetteBuilder: knitr
 URL: https://github.com/Samcil/Computational-Finance-Course
 BugReports: https://github.com/Samcil/Computational-Finance-Course/issues

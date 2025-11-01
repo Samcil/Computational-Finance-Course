@@ -35,7 +35,6 @@ plot_paths <- function(paths_data,
                        plot_type = c("standard", "compensated"),
                        alpha = 0.3,
                        theme = c("minimal", "classic", "bw")) {
-  
   # Validation
   # Use assert_integerish to allow numeric values coercible to integers (e.g., 100 instead of 100L)
   checkmate::assert_data_frame(paths_data)
@@ -43,23 +42,23 @@ plot_paths <- function(paths_data,
   checkmate::assert_number(alpha, lower = 0, upper = 1)
   plot_type <- match.arg(plot_type)
   theme <- match.arg(theme)
-  
+
   # Coerce to integer for internal use
   if (!is.null(n_paths_plot)) {
     n_paths_plot <- as.integer(n_paths_plot)
   }
-  
+
   # Get process type from attributes
   process_type <- attr(paths_data, "process_type")
   intensity <- attr(paths_data, "intensity")
-  
+
   # Filter paths if requested
   if (!is.null(n_paths_plot)) {
     max_path_id <- max(paths_data$path_id)
     paths_to_plot <- min(n_paths_plot, max_path_id)
     paths_data <- dplyr::filter(paths_data, path_id <= paths_to_plot)
   }
-  
+
   # Determine value column name based on process type and plot_type
   if (process_type == "poisson") {
     value_col <- if (plot_type == "compensated") "compensated_count" else "count"
@@ -68,27 +67,56 @@ plot_paths <- function(paths_data,
   } else {
     value_col <- "value"
   }
-  
+
   # Create appropriate labels based on process type
   plot_config <- get_plot_config(process_type, intensity, plot_type)
-  
+  has_component <- "component" %in% names(paths_data)
+  if (has_component) {
+    base_aes <- ggplot2::aes(
+      x = time,
+      y = .data[[value_col]],
+      group = interaction(path_id, component),
+      color = component
+    )
+  } else {
+    base_aes <- ggplot2::aes(
+      x = time,
+      y = .data[[value_col]],
+      group = path_id
+    )
+  }
+
   # Create base plot
-  p <- ggplot2::ggplot(
-    paths_data,
-    ggplot2::aes(x = time, y = .data[[value_col]], group = path_id)
-  ) +
-    ggplot2::geom_line(
+  if (has_component) {
+    line_layer <- ggplot2::geom_line(
+      alpha = alpha,
+      linewidth = 0.5
+    )
+  } else if (is.null(plot_config$color)) {
+    line_layer <- ggplot2::geom_line(
+      alpha = alpha,
+      linewidth = 0.5
+    )
+  } else {
+    line_layer <- ggplot2::geom_line(
       alpha = alpha,
       linewidth = 0.5,
       color = plot_config$color
-    ) +
+    )
+  }
+
+  p <- ggplot2::ggplot(
+    paths_data,
+    base_aes
+  ) +
+    line_layer +
     ggplot2::labs(
       title = plot_config$title,
       subtitle = plot_config$subtitle,
       x = "Time (years)",
       y = plot_config$y_label
     )
-  
+
   # Add expected value line for Poisson processes
   if (process_type == "poisson") {
     if (plot_type == "standard") {
@@ -110,16 +138,27 @@ plot_paths <- function(paths_data,
         linewidth = 1
       )
     }
+  } else if (process_type == "cir") {
+    long_term_mean <- attr(paths_data, "long_term_mean")
+    if (!is.null(long_term_mean)) {
+      p <- p + ggplot2::geom_hline(
+        yintercept = long_term_mean,
+        color = "red",
+        linetype = "dashed",
+        linewidth = 1
+      )
+    }
+  } else if (process_type == "correlated_bm" && has_component) {
+    p <- p + ggplot2::guides(color = ggplot2::guide_legend(title = "Component"))
   }
-  
+
   # Apply theme
-  p <- p + switch(
-    theme,
+  p <- p + switch(theme,
     minimal = ggplot2::theme_minimal(),
     classic = ggplot2::theme_classic(),
     bw = ggplot2::theme_bw()
   )
-  
+
   # Additional styling
   p <- p +
     ggplot2::theme(
@@ -128,7 +167,7 @@ plot_paths <- function(paths_data,
       axis.title = ggplot2::element_text(face = "bold"),
       panel.grid.minor = ggplot2::element_blank()
     )
-  
+
   p
 }
 
@@ -145,52 +184,98 @@ plot_paths <- function(paths_data,
 #'
 #' @keywords internal
 get_plot_config <- function(process_type, intensity = NULL, plot_type = "standard") {
-  
-  if (is.null(process_type) || process_type == "gbm") {
-    list(
-      title = "Geometric Brownian Motion Paths",
-      subtitle = "dS(t) = \u03bc S(t) dt + \u03c3 S(t) dW(t)",
-      y_label = "Stock Price S(t)",
-      color = "steelblue"
-    )
-  } else if (process_type == "abm") {
-    list(
-      title = "Arithmetic Brownian Motion Paths",
-      subtitle = "dX(t) = \u03bc dt + \u03c3 dW(t)",
-      y_label = "Process Value X(t)",
-      color = "darkred"
-    )
-  } else if (process_type == "poisson") {
-    if (plot_type == "compensated") {
+  if (is.null(process_type)) {
+    process_type <- "gbm"
+  }
+
+  config_generators <- list(
+    gbm = function(intensity = NULL, plot_type = "standard") {
       list(
-        title = "Compensated Poisson Process Paths",
-        subtitle = sprintf(
-          "\u00d1(t) = N(t) - \u03bbt  |  \u03bb = %.2f (martingale)",
-          intensity
-        ),
-        y_label = "Compensated Count \u00d1(t)",
-        color = "darkgreen"
+        title = "Geometric Brownian Motion Paths",
+        subtitle = "dS(t) = \u03bc S(t) dt + \u03c3 S(t) dW(t)",
+        y_label = "Stock Price S(t)",
+        color = "steelblue"
       )
-    } else {
+    },
+    abm = function(intensity = NULL, plot_type = "standard") {
       list(
-        title = "Poisson Process Paths",
-        subtitle = sprintf(
-          "N(t) ~ Poisson(\u03bbt)  |  \u03bb = %.2f",
-          intensity
-        ),
-        y_label = "Count N(t)",
-        color = "darkorange"
+        title = "Arithmetic Brownian Motion Paths",
+        subtitle = "dX(t) = \u03bc dt + \u03c3 dW(t)",
+        y_label = "Process Value X(t)",
+        color = "darkred"
+      )
+    },
+    poisson = function(intensity = NULL, plot_type = "standard") {
+      if (plot_type == "compensated") {
+        list(
+          title = "Compensated Poisson Process Paths",
+          subtitle = sprintf(
+            "\u00d1(t) = N(t) - \u03bbt  |  \u03bb = %.2f (martingale)",
+            intensity
+          ),
+          y_label = "Compensated Count \u00d1(t)",
+          color = "darkgreen"
+        )
+      } else {
+        list(
+          title = "Poisson Process Paths",
+          subtitle = sprintf(
+            "N(t) ~ Poisson(\u03bbt)  |  \u03bb = %.2f",
+            intensity
+          ),
+          y_label = "Count N(t)",
+          color = "darkorange"
+        )
+      }
+    },
+    cir = function(intensity = NULL, plot_type = "standard") {
+      list(
+        title = "CIR Variance Paths",
+        subtitle = "dv(t) = \u03ba(\u03b8 - v(t))dt + \u03c3\u221av(t)dW(t)",
+        y_label = "Variance v(t)",
+        color = "purple"
+      )
+    },
+    correlated_bm = function(intensity = NULL, plot_type = "standard") {
+      list(
+        title = "Correlated Brownian Motion Paths",
+        subtitle = "dX(t) = \u03bc dt + L dW(t)",
+        y_label = "Component value",
+        color = NULL
+      )
+    },
+    heston = function(intensity = NULL, plot_type = "standard") {
+      list(
+        title = "Heston Stochastic Volatility Paths",
+        subtitle = "Joint stock price and variance under correlated Brownian motions",
+        y_label = "Stock price S(t)",
+        color = "navy"
+      )
+    },
+    merton = function(intensity = NULL, plot_type = "standard") {
+      list(
+        title = "Merton Jump-Diffusion Paths",
+        subtitle = "dS/S = (r - \u03bb \u03ba) dt + \u03c3 dW + J dN",
+        y_label = "Stock price S(t)",
+        color = "firebrick"
+      )
+    },
+    default = function(intensity = NULL, plot_type = "standard") {
+      list(
+        title = "Simulated Paths",
+        subtitle = "",
+        y_label = "Value",
+        color = "black"
       )
     }
-  } else {
-    # Default
-    list(
-      title = "Simulated Paths",
-      subtitle = "",
-      y_label = "Value",
-      color = "black"
-    )
+  )
+
+  generator <- config_generators[[process_type]]
+  if (is.null(generator)) {
+    generator <- config_generators$default
   }
+
+  generator(intensity = intensity, plot_type = plot_type)
 }
 
 
@@ -211,7 +296,6 @@ get_plot_config <- function(process_type, intensity = NULL, plot_type = "standar
 #'
 #' @export
 demo_paths <- function(process_spec, n_paths = 25, ...) {
-  
   # Simulate with defaults
   paths <- simulate_paths(
     process_spec = process_spec,
@@ -220,10 +304,10 @@ demo_paths <- function(process_spec, n_paths = 25, ...) {
     maturity = 1.0,
     ...
   )
-  
+
   # Create plot
   p <- plot_paths(paths, n_paths_plot = min(25, n_paths))
-  
+
   # Return both
   list(
     paths = paths,
