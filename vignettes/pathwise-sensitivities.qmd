@@ -1,0 +1,267 @@
+---
+title: "Pathwise Greeks via Monte Carlo"
+format:
+  html:
+    toc: true
+    toc-location: left
+execute:
+  message: false
+  warning: false
+  echo: true
+---
+
+## Motivation
+
+`Lecture 11/Hedging and Monte Carlo Sensitivities/PathwiseSens_DeltaVega.py`
+illustrates the pathwise differentiation method for computing delta and vega.
+This vignette mirrors that workflow with the `CompFinanceR` pathwise utilities
+and augments the analysis with interactive Plotly visualisations.
+
+### Learning Goals
+
+- Estimate delta and vega using the pathwise method under geometric Brownian
+  motion.
+- Compare Monte Carlo Greeks with finite-difference and analytical benchmarks.
+- Inspect estimator convergence and the contribution distribution interactively.
+
+## Setup
+
+```{r}
+library(CompFinanceR)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(plotly)
+set.seed(451)
+```
+
+We consider a call option with the same parameters used in the lecture notes.
+
+```{r}
+option_spec <- gbm_spec(
+  initial_value = 1,
+  drift = 0.06,
+  volatility = 0.3
+)
+strike <- 1
+maturity <- 1
+risk_free <- 0.06
+```
+
+## Pathwise vs Analytical Benchmarks
+
+Using a large Monte Carlo sample we compare the pathwise method with central
+finite differences and Black-Scholes analytical Greeks.
+
+```{r}
+comparison <- compare_with_finite_diff(
+  process_spec = option_spec,
+  strikes = strike,
+  maturity = maturity,
+  n_paths = 20000,
+  n_steps = 500,
+  risk_free_rate = risk_free,
+  option_type = "call",
+  bump_spot = 0.01,
+  bump_vol = 5e-4,
+  seed = 123
+)
+comparison
+```
+
+## Convergence with Path Count
+
+We reproduce the lecture figure showing pathwise estimators converging towards
+the analytical values as the number of paths increases.
+
+```{r}
+path_grid <- unique(round(seq(200, 8000, length.out = 20)))
+
+convergence <- purrr::map_dfr(
+  path_grid,
+  \(n_paths) {
+    paths <- simulate_paths(
+      process_spec = option_spec,
+      n_paths = n_paths,
+      n_steps = 400,
+      maturity = maturity,
+      seed = 100
+    )
+    tibble::tibble(
+      n_paths = n_paths,
+      delta = pathwise_delta(
+        paths,
+        strikes = strike,
+        maturity = maturity,
+        risk_free_rate = risk_free,
+        option_type = "call",
+        initial_price = option_spec$initial_value
+      )$delta_pathwise,
+      vega = pathwise_vega(
+        paths,
+        strikes = strike,
+        maturity = maturity,
+        risk_free_rate = risk_free,
+        option_type = "call",
+        volatility = option_spec$volatility,
+        initial_price = option_spec$initial_value
+      )$vega_pathwise
+    )
+  }
+)
+
+analytic_greeks <- black_scholes_spec(
+  option_type = "call",
+  strike = strike,
+  maturity = maturity,
+  risk_free_rate = risk_free
+) |>
+  price_options(spot = option_spec$initial_value, volatility = option_spec$volatility) |>
+  select(delta_analytic = delta, vega_analytic = vega)
+analytic_greeks
+```
+
+```{r}
+plot_ly(convergence, x = ~n_paths, y = ~delta, type = "scatter",
+        mode = "lines+markers", name = "Delta (pathwise)",
+        line = list(color = "#1f77b4")) |>
+  add_lines(x = ~n_paths, y = analytic_greeks$delta_analytic,
+            name = "Delta (analytic)", line = list(color = "black", dash = "dash")) |>
+  layout(
+    title = "Pathwise Delta Convergence",
+    xaxis = list(title = "Number of paths"),
+    yaxis = list(title = "Delta")
+  )
+```
+
+```{r}
+plot_ly(convergence, x = ~n_paths, y = ~vega, type = "scatter",
+        mode = "lines+markers", name = "Vega (pathwise)",
+        line = list(color = "#ff7f0e")) |>
+  add_lines(x = ~n_paths, y = analytic_greeks$vega_analytic,
+            name = "Vega (analytic)", line = list(color = "black", dash = "dash")) |>
+  layout(
+    title = "Pathwise Vega Convergence",
+    xaxis = list(title = "Number of paths"),
+    yaxis = list(title = "Vega")
+  )
+```
+
+## Contribution Distributions
+
+The lecture emphasises how each path contributes to the estimator. We reproduce
+the contribution histograms interactively.
+
+```{r}
+large_paths <- simulate_paths(
+  process_spec = option_spec,
+  n_paths = 20000,
+  n_steps = 400,
+  maturity = maturity,
+  seed = 321
+) |>
+  filter(time == maturity)
+
+delta_contrib <- large_paths |>
+  mutate(
+    payoff_indicator = as.numeric(stock_price > strike),
+    delta_contribution = exp(-risk_free * maturity) * (stock_price / option_spec$initial_value) * payoff_indicator
+  )
+
+vega_contrib <- large_paths |>
+  mutate(
+    payoff_indicator = as.numeric(stock_price > strike),
+    adjustment = (log(stock_price / option_spec$initial_value) - (risk_free + 0.5 * option_spec$volatility^2) * maturity),
+    vega_contribution = exp(-risk_free * maturity) * (stock_price / option_spec$volatility) * adjustment * payoff_indicator
+  )
+```
+
+```{r}
+plot_ly(delta_contrib, x = ~delta_contribution, type = "histogram", nbinsx = 60,
+        marker = list(color = "steelblue")) |>
+  layout(
+    title = "Distribution of Pathwise Delta Contributions",
+    xaxis = list(title = "Contribution"),
+    yaxis = list(title = "Count")
+  )
+```
+
+```{r}
+plot_ly(vega_contrib, x = ~vega_contribution, type = "histogram", nbinsx = 60,
+        marker = list(color = "darkorange")) |>
+  layout(
+    title = "Distribution of Pathwise Vega Contributions",
+    xaxis = list(title = "Contribution"),
+    yaxis = list(title = "Count")
+  )
+```
+
+## Hedging Context
+
+Pathwise Greeks plug directly into the hedging routines developed elsewhere in
+the course. For completeness we show the Monte Carlo delta and vega alongside
+finite differences on a tidy grid of strikes.
+
+```{r}
+strike_grid <- seq(0.6, 1.4, by = 0.1)
+
+comparison_grid <- compare_with_finite_diff(
+  process_spec = option_spec,
+  strikes = strike_grid,
+  maturity = maturity,
+  n_paths = 15000,
+  n_steps = 300,
+  risk_free_rate = risk_free,
+  option_type = "call",
+  bump_spot = 0.01,
+  bump_vol = 5e-4,
+  seed = 777
+)
+comparison_grid
+```
+
+Interactive scatter plots help gauge deviations strike by strike.
+
+```{r}
+comparison_long <- comparison_grid |>
+  pivot_longer(
+    cols = c(delta_pathwise, delta_fd, delta_analytic),
+    names_to = "metric",
+    values_to = "value"
+  )
+
+plot_ly(comparison_long, x = ~strike, y = ~value, color = ~metric,
+        type = "scatter", mode = "lines+markers") |>
+  layout(
+    title = "Strike-wise Delta Comparison",
+    xaxis = list(title = "Strike"),
+    yaxis = list(title = "Delta")
+  )
+```
+
+```{r}
+vega_long <- comparison_grid |>
+  pivot_longer(
+    cols = c(vega_pathwise, vega_fd, vega_analytic),
+    names_to = "metric",
+    values_to = "value"
+  )
+
+plot_ly(vega_long, x = ~strike, y = ~value, color = ~metric,
+        type = "scatter", mode = "lines+markers") |>
+  layout(
+    title = "Strike-wise Vega Comparison",
+    xaxis = list(title = "Strike"),
+    yaxis = list(title = "Vega")
+  )
+```
+
+## Key Takeaways
+
+- Pathwise estimators converge rapidly to the analytical Greeks, matching the
+  lecture demonstrations.
+- Interactive histograms reveal the contribution distributions that underpin
+  estimator variance.
+  
+- Finite-difference and pathwise estimates agree across strikes, validating the
+  R implementation against the Python baseline.

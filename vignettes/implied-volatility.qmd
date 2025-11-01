@@ -1,0 +1,217 @@
+---
+title: "Implied Volatility Surfaces"
+format:
+  html:
+    toc: true
+    toc-location: left
+execute:
+  message: false
+  warning: false
+  echo: true
+---
+
+## Motivation
+
+`Lecture 04/ImpliedVolatility.py` walks through Newton-style solvers for
+recovering implied volatilities from option quotes. The `CompFinanceR` package
+wraps that workflow in tidy helpers while exposing confidence diagnostics.
+
+### Learning Goals
+
+- Construct call and put implied volatility surfaces.
+- Validate solver convergence and bounds.
+- Visualise smiles directly from tidy outputs.
+
+## Setup
+
+```{r}
+library(CompFinanceR)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(plotly)
+```
+
+## Sample Option Data
+
+We synthesise call prices and recover the implied volatility curve as in the
+Python notebook.
+
+```{r}
+spot <- 100
+risk_free <- 0.02
+maturity <- 0.5
+true_vol <- 0.25
+
+call_spec <- black_scholes_spec(
+  option_type = "call",
+  strike = NA,
+  maturity = maturity,
+  risk_free_rate = risk_free,
+  dividend_yield = 0
+)
+
+strikes <- seq(80, 120, by = 5)
+
+calls <- tibble::tibble(
+  strike = strikes,
+  price = price_options(
+    call_spec,
+    spot = spot,
+    volatility = true_vol
+  )$price
+)
+
+calls
+```
+
+## Call Implied Volatility
+
+```{r}
+call_iv <- implied_volatility_call(
+  option_data = calls,
+  spot = spot,
+  maturity = maturity,
+  risk_free_rate = risk_free
+)
+call_iv
+```
+
+You can compare the recovered values with the input volatility to verify solver
+accuracy.
+
+```{r}
+call_iv |>
+  mutate(deviation = implied_volatility - true_vol)
+```
+
+## Put Implied Volatility
+
+The helper `implied_volatility_put()` uses the same engine but flips the payoff
+assumptions.
+
+```{r}
+puts <- calls |>
+  mutate(price = price_options(
+    black_scholes_spec(
+      option_type = "put",
+      strike = strike,
+      maturity = maturity,
+      risk_free_rate = risk_free
+    ),
+    spot = spot,
+    volatility = true_vol
+  )$price)
+
+put_iv <- implied_volatility_put(
+  option_data = puts,
+  spot = spot,
+  maturity = maturity,
+  risk_free_rate = risk_free
+)
+```
+
+## Visualising the Smile
+
+```{r}
+ggplot(call_iv, aes(strike, implied_volatility)) +
+  geom_point(size = 2, colour = "steelblue") +
+  geom_hline(yintercept = true_vol, linetype = "dashed") +
+  labs(
+    title = "Call Implied Volatility Curve",
+    x = "Strike",
+    y = "Implied Volatility"
+  )
+```
+
+## Surface Construction
+
+The lecture builds a grid across strikes and maturities. The `CompFinanceR`
+functions fit naturally into `tidyr::expand_grid()` workflows.
+
+```{r}
+term_structure <- tidyr::expand_grid(
+  strike = seq(80, 120, by = 5),
+  maturity = c(0.25, 0.5, 1)
+) |>
+  mutate(price = price_options(
+    black_scholes_spec(
+      option_type = "call",
+      strike = strike,
+      maturity = maturity,
+      risk_free_rate = risk_free
+    ),
+    spot = spot,
+    volatility = true_vol
+  )$price)
+
+
+## Interactive 3D Surface
+
+The Plotly view mirrors the lecture's surface visualisation while enabling
+rotation and slicing along strike and maturity.
+
+```{r}
+surface <- term_structure |>
+  distinct(strike, maturity, implied_volatility)
+
+surface_wide <- surface_grid |>
+  arrange(strike, maturity) |>
+  tidyr::pivot_wider(names_from = maturity, values_from = implied_volatility)
+
+maturity_vals <- names(surface_wide)[-1] |> as.numeric()
+
+plot_ly(
+  x = maturity_vals,
+  y = surface_wide$strike,
+  z = as.matrix(surface_wide[, -1]),
+  type = "surface",
+  colorscale = "Viridis"
+) |>
+  layout(
+    scene = list(
+      xaxis = list(title = "Maturity"),
+      yaxis = list(title = "Strike"),
+      zaxis = list(title = "Implied Volatility")
+    ),
+    title = "Interactive Implied Volatility Surface"
+  )
+```
+  group_by(maturity) |>
+  group_modify(~ implied_volatility_call(.x, spot = spot, maturity = unique(.x$maturity), risk_free_rate = risk_free))
+```
+
+```{r}
+ggplot(surface, aes(strike, implied_volatility, colour = factor(maturity))) +
+  geom_line() +
+  labs(
+    title = "Implied Volatility Surface Cuts",
+    x = "Strike",
+    y = "Implied Volatility",
+    colour = "Maturity"
+  )
+```
+
+## Diagnostics
+
+The solver exposes how close the recovered volatility lies to the search
+interval endpoints, mirroring the guard rails emphasised in the Python script.
+
+```{r}
+solver_diag <- implied_volatility_call(
+  option_data = calls,
+  spot = spot,
+  maturity = maturity,
+  risk_free_rate = risk_free,
+  lower = 0.05,
+  upper = 1
+)
+solver_diag
+```
+
+## Key Takeaways
+
+- `implied_volatility_call()` and `implied_volatility_put()` encapsulate the
+  Newton/bisection solver with guard rails discussed in Lecture 04.
+- Tidy outputs make it easy to visualise smiles and surfaces.
+- Diagnostics mirror the convergence checks implemented in the Python notebook.

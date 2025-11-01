@@ -1,0 +1,281 @@
+---
+title: "Fourier-COS Pricing and Density Recovery"
+format:
+  html:
+    toc: true
+    toc-location: left
+execute:
+  message: false
+  warning: false
+  echo: true
+---
+
+## Motivation
+
+`Lecture 08/Fourier Transformation for Option Pricing` demonstrates Fang &
+Oosterlee's COS method, density recovery, and FFT-based inversion via the
+scripts `CallPut_COS_Method.py`, `COS_Normal_Density_Recovery.py`,
+`COS_LogNormal_Density_Recovery.py`, and `DensityRecoveryFFT.py`. The
+`CompFinanceR` package now exposes these workflows in R.
+
+### Learning Goals
+
+- Price vanilla calls and puts with the COS method for arbitrary characteristic
+  functions.
+- Recover densities from characteristic functions using COS and FFT.
+- Compare numerical outputs against analytic benchmarks.
+
+## Setup
+
+```{r}
+library(CompFinanceR)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(plotly)
+```
+
+## COS Pricing for Black-Scholes
+
+We start with the Black-Scholes characteristic function and call/put pricing,
+mirroring `CallPut_COS_Method.py`.
+
+```{r}
+spot <- 100
+sigma <- 0.2
+risk_free <- 0.03
+maturity <- 1
+
+cf_bs <- function(u) {
+  drift <- log(spot) + (risk_free - 0.5 * sigma^2) * maturity
+  exp(1i * u * drift - 0.5 * sigma^2 * maturity * u^2)
+}
+
+strikes <- seq(80, 120, by = 5)
+
+cos_calls <- cos_call_put_price(
+  cf = cf_bs,
+  option_type = "call",
+  spot = spot,
+  risk_free_rate = risk_free,
+  maturity = maturity,
+  strikes = strikes
+)
+
+cos_puts <- cos_call_put_price(
+  cf = cf_bs,
+  option_type = "put",
+  spot = spot,
+  risk_free_rate = risk_free,
+  maturity = maturity,
+  strikes = strikes
+)
+```
+
+Compare against analytic Black-Scholes prices to replicate the lecture's
+accuracy check.
+
+```{r}
+analytic <- tibble::tibble(
+  strike = strikes,
+  call_bs = price_options(
+    black_scholes_spec("call", strike, maturity, risk_free),
+    spot = spot,
+    volatility = sigma
+  )$price,
+  put_bs = price_options(
+    black_scholes_spec("put", strike, maturity, risk_free),
+    spot = spot,
+    volatility = sigma
+  )$price
+)
+
+comparison <- analytic |>
+  left_join(cos_calls, by = "strike") |>
+  rename(call_cos = price) |>
+  left_join(cos_puts, by = "strike") |>
+  rename(put_cos = price) |>
+  mutate(
+    call_error = abs(call_cos - call_bs),
+    put_error = abs(put_cos - put_bs)
+  )
+comparison
+```
+
+Errors stay within the tolerance highlighted in the Python notebook.
+
+## Characteristic Function Surfaces
+
+Interactive plots emphasise how the Black-Scholes characteristic function
+varies across frequencies and maturities.
+
+```{r}
+u_grid <- seq(-40, 40, length.out = 160)
+tau_grid <- seq(0.25, 2, length.out = 25)
+
+cf_grid <- expand_grid(
+  maturity = tau_grid,
+  u = u_grid
+) |>
+  mutate(
+    drift = log(spot) + (risk_free - 0.5 * sigma^2) * maturity,
+    cf_value = exp(1i * u * drift - 0.5 * sigma^2 * maturity * u^2),
+    real_part = Re(cf_value),
+    imag_part = Im(cf_value),
+    magnitude = Mod(cf_value)
+  )
+
+real_surface <- cf_grid |>
+  select(u, maturity, value = real_part) |>
+  pivot_wider(names_from = maturity, values_from = value) |>
+  arrange(u)
+
+imag_surface <- cf_grid |>
+  select(u, maturity, value = imag_part) |>
+  pivot_wider(names_from = maturity, values_from = value) |>
+  arrange(u)
+
+mag_surface <- cf_grid |>
+  select(u, maturity, value = magnitude) |>
+  pivot_wider(names_from = maturity, values_from = value) |>
+  arrange(u)
+
+u_vals <- real_surface$u
+tau_vals <- names(real_surface)[-1] |> as.numeric()
+```
+
+```{r}
+plot_ly(
+  x = tau_vals,
+  y = u_vals,
+  z = as.matrix(real_surface[, -1]),
+  type = "surface",
+  colorscale = "RdBu"
+) |>
+  layout(
+    scene = list(
+      xaxis = list(title = "Maturity"),
+      yaxis = list(title = "Frequency u"),
+      zaxis = list(title = "Re(\u03c6(u))")
+    ),
+    title = "Real Part of the Black-Scholes Characteristic Function"
+  )
+```
+
+```{r}
+plot_ly(
+  x = tau_vals,
+  y = u_vals,
+  z = as.matrix(imag_surface[, -1]),
+  type = "surface",
+  colorscale = "RdBu"
+) |>
+  layout(
+    scene = list(
+      xaxis = list(title = "Maturity"),
+      yaxis = list(title = "Frequency u"),
+      zaxis = list(title = "Im(\u03c6(u))")
+    ),
+    title = "Imaginary Part of the Black-Scholes Characteristic Function"
+  )
+```
+
+```{r}
+plot_ly(
+  x = tau_vals,
+  y = u_vals,
+  z = as.matrix(mag_surface[, -1]),
+  type = "surface",
+  colorscale = "Viridis"
+) |>
+  layout(
+    scene = list(
+      xaxis = list(title = "Maturity"),
+      yaxis = list(title = "Frequency u"),
+      zaxis = list(title = "|\u03c6(u)|")
+    ),
+    title = "Magnitude of the Black-Scholes Characteristic Function"
+  )
+```
+
+## Density Recovery with COS
+
+`COS_Normal_Density_Recovery.py` illustrates reconstructing the normal density;
+we can recover both normal and log-normal examples using `cos_density_recovery()`.
+
+```{r}
+x_grid <- seq(-4, 4, length.out = 501)
+normal_cf <- function(u) exp(-0.5 * u^2)
+
+normal_density <- cos_density_recovery(
+  cf = normal_cf,
+  x = x_grid,
+  maturity = 1,
+  n_terms = 256,
+  truncation = 8
+)
+```
+
+```{r}
+normal_density |>
+  ggplot(aes(x, density)) +
+  geom_line() +
+  labs(title = "Recovered Standard Normal Density")
+```
+
+For the log-normal case we compare the recovered density with a kernel density
+estimate from Monte Carlo samples, echoing the lecture experiment.
+
+```{r}
+log_x <- seq(log(40), log(160), length.out = 501)
+log_density <- cos_density_recovery(
+  cf = cf_bs,
+  x = log_x,
+  maturity = maturity,
+  n_terms = 256,
+  truncation = 8
+)
+
+samples <- rlnorm(1e5, meanlog = log(spot) + (risk_free - 0.5 * sigma^2) * maturity, sdlog = sigma * sqrt(maturity))
+```
+
+```{r}
+log_density |>
+  mutate(price = exp(x)) |>
+  ggplot(aes(price, density / price)) +
+  geom_line(colour = "steelblue") +
+  geom_density(data = tibble::tibble(price = samples), aes(price), colour = "orange", inherit.aes = FALSE) +
+  labs(title = "Log-Normal Density Recovery")
+```
+
+## FFT Density Recovery
+
+`DensityRecoveryFFT.py` applies an FFT to invert characteristic functions. The
+`fft_density_recovery()` helper replicates that workflow.
+
+```{r}
+fft_density <- fft_density_recovery(
+  cf = cf_bs,
+  x = log_x,
+  maturity = maturity,
+  n_terms = 2^12,
+  lower_bound = log(40),
+  upper_bound = log(160)
+)
+```
+
+```{r}
+fft_density |>
+  mutate(price = exp(x)) |>
+  ggplot(aes(price, density / price)) +
+  geom_line() +
+  labs(title = "FFT Density Recovery")
+```
+
+## Key Takeaways
+
+- `cos_call_put_price()` and `cos_density_recovery()` deliver the core COS
+  routines from Lecture 08 in idiomatic R.
+- `fft_density_recovery()` mirrors the FFT inversion script.
+- Tidy outputs simplify accuracy checks against analytic benchmarks and Monte
+  Carlo estimates.

@@ -1,0 +1,378 @@
+---
+title: "Heston Monte Carlo Simulation"
+format:
+  html:
+    toc: true
+    toc-location: left
+execute:
+  message: false
+  warning: false
+  echo: true
+---
+
+## Motivation
+
+`Lecture 10/Monte Carlo Simulation of the Heston Model` focuses on CIR variance
+dynamics, discretisation pitfalls, and option pricing accuracy under different
+schemes. This vignette rebuilds those experiments with tidy Monte Carlo tools
+and interactive Plotly figures.
+
+### Learning Goals
+
+- Inspect CIR variance paths and boundary behaviour.
+- Compare Euler and Andersen quadratic-exponential (AES) Heston simulations.
+- Benchmark Monte Carlo option prices against COS semi-analytical values.
+- Explore the Heston characteristic function across maturities.
+
+## Setup
+
+```{r}
+library(CompFinanceR)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(plotly)
+set.seed(310)
+```
+
+## CIR Variance Dynamics
+
+We start with the square-root variance process emphasised in `CIR_paths_boundary.py`.
+
+```{r}
+cir_params <- cir_spec(
+  initial_value = 0.04,
+  mean_reversion = 1.5,
+  long_term_mean = 0.04,
+  volatility = 0.6
+)
+
+cir_paths <- simulate_paths(
+  process_spec = cir_params,
+  n_paths = 12,
+  n_steps = 600,
+  maturity = 1,
+  seed = 11
+)
+
+summary_cir <- cir_paths |>
+  summarise(min_variance = min(variance))
+summary_cir
+```
+
+```{r}
+plot_ly(cir_paths, x = ~time, y = ~variance, color = ~factor(path_id),
+        type = "scatter", mode = "lines", hoverinfo = "text",
+        text = ~paste0("Path ", path_id, "<br>t=", round(time, 3),
+                       "<br>v=", round(variance, 4))) |>
+  layout(
+    title = "CIR Variance Paths (Euler with Reflection)",
+    xaxis = list(title = "Time"),
+    yaxis = list(title = "Variance"),
+    showlegend = FALSE
+  )
+```
+
+## Heston Specification
+
+We adopt the parameters used in `HestonModelDiscretization.py` (violating the
+Feller condition to highlight numerical issues).
+
+```{r}
+heston_base <- heston_spec(
+  initial_price = 100,
+  initial_variance = 0.04,
+  risk_free_rate = 0.02,
+  dividend_yield = 0,
+  mean_reversion = 1.5,
+  long_term_variance = 0.04,
+  vol_of_vol = 0.9,
+  correlation = -0.7,
+  scheme = "euler"
+)
+
+euler_paths <- simulate_paths(
+  heston_base,
+  n_paths = 50,
+  n_steps = 300,
+  maturity = 1,
+  seed = 21
+)
+
+aes_spec <- heston_spec(
+  initial_price = 100,
+  initial_variance = 0.04,
+  risk_free_rate = 0.02,
+  dividend_yield = 0,
+  mean_reversion = 1.5,
+  long_term_variance = 0.04,
+  vol_of_vol = 0.9,
+  correlation = -0.7,
+  scheme = "aes"
+)
+
+aes_paths <- simulate_paths(
+  aes_spec,
+  n_paths = 50,
+  n_steps = 300,
+  maturity = 1,
+  seed = 21
+)
+```
+
+### Variance Floor Comparison
+
+```{r}
+variance_floor <- bind_rows(
+  mutate(euler_paths, scheme = "Euler"),
+  mutate(aes_paths, scheme = "AES")
+) |>
+  group_by(scheme) |>
+  summarise(
+    min_variance = min(variance),
+    mean_terminal_variance = mean(variance[time == max(time)]),
+    .groups = "drop"
+  )
+variance_floor
+```
+
+### Interactive Variance Surfaces
+
+```{r}
+time_grid <- sort(unique(euler_paths$time))
+subset_paths <- euler_paths |>
+  filter(path_id <= 20) |>
+  select(path_id, time, variance) |>
+  pivot_wider(names_from = time, values_from = variance) |>
+  arrange(path_id)
+
+subset_paths_aes <- aes_paths |>
+  filter(path_id <= 20) |>
+  select(path_id, time, variance) |>
+  pivot_wider(names_from = time, values_from = variance) |>
+  arrange(path_id)
+
+variance_matrix_euler <- as.matrix(subset_paths[, -1])
+variance_matrix_aes <- as.matrix(subset_paths_aes[, -1])
+
+plot_ly(x = time_grid, y = subset_paths$path_id, z = variance_matrix_euler,
+        type = "surface", colorscale = "Inferno") |>
+  layout(
+    title = "Variance Surface (Euler)",
+    scene = list(
+      xaxis = list(title = "Time"),
+      yaxis = list(title = "Path"),
+      zaxis = list(title = "Variance")
+    )
+  )
+```
+
+```{r}
+plot_ly(x = time_grid, y = subset_paths_aes$path_id, z = variance_matrix_aes,
+        type = "surface", colorscale = "Viridis") |>
+  layout(
+    title = "Variance Surface (AES)",
+    scene = list(
+      xaxis = list(title = "Time"),
+      yaxis = list(title = "Path"),
+      zaxis = list(title = "Variance")
+    )
+  )
+```
+
+### Stock Price Surfaces
+
+```{r}
+stock_surface_euler <- euler_paths |>
+  filter(path_id <= 20) |>
+  select(path_id, time, stock_price) |>
+  pivot_wider(names_from = time, values_from = stock_price) |>
+  arrange(path_id)
+
+stock_surface_aes <- aes_paths |>
+  filter(path_id <= 20) |>
+  select(path_id, time, stock_price) |>
+  pivot_wider(names_from = time, values_from = stock_price) |>
+  arrange(path_id)
+
+price_matrix_euler <- as.matrix(stock_surface_euler[, -1])
+price_matrix_aes <- as.matrix(stock_surface_aes[, -1])
+
+plot_ly(x = time_grid, y = stock_surface_euler$path_id, z = price_matrix_euler,
+        type = "surface", colorscale = "PuBuGn") |>
+  layout(
+    title = "Stock Surface (Euler)",
+    scene = list(
+      xaxis = list(title = "Time"),
+      yaxis = list(title = "Path"),
+      zaxis = list(title = "Stock Price")
+    )
+  )
+```
+
+```{r}
+plot_ly(x = time_grid, y = stock_surface_aes$path_id, z = price_matrix_aes,
+        type = "surface", colorscale = "Cividis") |>
+  layout(
+    title = "Stock Surface (AES)",
+    scene = list(
+      xaxis = list(title = "Time"),
+      yaxis = list(title = "Path"),
+      zaxis = list(title = "Stock Price")
+    )
+  )
+```
+
+## Option Pricing: Euler vs AES vs COS
+
+The lecture compares Monte Carlo schemes against semi-analytic prices. We use
+`price_heston_option_cos()` as the reference.
+
+```{r}
+strike <- 100
+maturity <- 1
+
+terminal_euler <- euler_paths |>
+  filter(time == max(time))
+terminal_aes <- aes_paths |>
+  filter(time == max(time))
+
+discount <- exp(-heston_base$risk_free_rate * maturity)
+
+mc_summary <- tibble::tibble(
+  scheme = c("Euler", "AES"),
+  price = c(
+    discount * mean(pmax(terminal_euler$stock_price - strike, 0)),
+    discount * mean(pmax(terminal_aes$stock_price - strike, 0))
+  ),
+  sd_payoff = c(
+    stats::sd(exp(-heston_base$risk_free_rate * maturity) * pmax(terminal_euler$stock_price - strike, 0)),
+    stats::sd(exp(-heston_base$risk_free_rate * maturity) * pmax(terminal_aes$stock_price - strike, 0))
+  ) / sqrt(nrow(terminal_euler))
+)
+
+cos_reference <- price_heston_option_cos(
+  process_spec = aes_spec,
+  strikes = strike,
+  maturity = maturity,
+  n_terms = 512,
+  truncation = 8
+)
+
+mc_summary |>
+  mutate(reference = cos_reference$call_price)
+```
+
+### Terminal Distribution Comparison
+
+```{r}
+combined_terminal <- bind_rows(
+  mutate(terminal_euler, scheme = "Euler"),
+  mutate(terminal_aes, scheme = "AES")
+)
+
+plot_ly(combined_terminal, x = ~stock_price, color = ~scheme, type = "histogram",
+        nbinsx = 60, opacity = 0.6, barmode = "overlay") |>
+  layout(
+    title = "Terminal Stock Price Distribution",
+    xaxis = list(title = "S(T)"),
+    yaxis = list(title = "Count")
+  )
+```
+
+## Heston Characteristic Function Explorer
+
+Plotly surfaces help interrogate the magnitude and real/imaginary parts across
+time and frequency, echoing the lecture's characteristic-function focus.
+
+```{r}
+u_grid <- seq(-40, 40, length.out = 120)
+tau_grid <- seq(0.25, 2, length.out = 30)
+
+cf_data <- expand_grid(u = u_grid, maturity = tau_grid) |>
+  mutate(
+    value = heston_characteristic_function(
+      u = u,
+      maturity = maturity,
+      initial_price = heston_base$initial_price,
+      initial_variance = heston_base$initial_variance,
+      risk_free_rate = heston_base$risk_free_rate,
+      dividend_yield = heston_base$dividend_yield,
+      mean_reversion = heston_base$mean_reversion,
+      long_term_variance = heston_base$long_term_variance,
+      vol_of_vol = heston_base$vol_of_vol,
+      correlation = heston_base$correlation
+    ),
+    real_part = Re(value),
+    imag_part = Im(value),
+    magnitude = Mod(value)
+  )
+
+cf_real <- cf_data |>
+  select(u, maturity, real_part) |>
+  pivot_wider(names_from = maturity, values_from = real_part) |>
+  arrange(u)
+
+cf_imag <- cf_data |>
+  select(u, maturity, imag_part) |>
+  pivot_wider(names_from = maturity, values_from = imag_part) |>
+  arrange(u)
+
+cf_mag <- cf_data |>
+  select(u, maturity, magnitude) |>
+  pivot_wider(names_from = maturity, values_from = magnitude) |>
+  arrange(u)
+
+maturity_vals <- as.numeric(names(cf_real)[-1])
+frequency_vals <- cf_real$u
+```
+
+```{r}
+plot_ly(x = maturity_vals, y = frequency_vals, z = as.matrix(cf_real[, -1]),
+        type = "surface", colorscale = "RdBu") |>
+  layout(
+    title = "Real Part of Heston Characteristic Function",
+    scene = list(
+      xaxis = list(title = "Maturity"),
+      yaxis = list(title = "Frequency u"),
+      zaxis = list(title = "Re(φ(u))")
+    )
+  )
+```
+
+```{r}
+plot_ly(x = maturity_vals, y = frequency_vals, z = as.matrix(cf_imag[, -1]),
+        type = "surface", colorscale = "RdBu") |>
+  layout(
+    title = "Imaginary Part of Heston Characteristic Function",
+    scene = list(
+      xaxis = list(title = "Maturity"),
+      yaxis = list(title = "Frequency u"),
+      zaxis = list(title = "Im(φ(u))")
+    )
+  )
+```
+
+```{r}
+plot_ly(x = maturity_vals, y = frequency_vals, z = as.matrix(cf_mag[, -1]),
+        type = "surface", colorscale = "Viridis") |>
+  layout(
+    title = "Magnitude of Heston Characteristic Function",
+    scene = list(
+      xaxis = list(title = "Maturity"),
+      yaxis = list(title = "Frequency u"),
+      zaxis = list(title = "|φ(u)|")
+    )
+  )
+```
+
+## Key Takeaways
+
+- CIR variance paths expose boundary reflection under Euler and highlight the
+  stability of AES sampling.
+- AES preserves positivity more effectively, yielding smoother variance and
+  stock surfaces.
+- Monte Carlo call prices align with COS references once variance sampling is
+  stabilised.
+- Plotly surfaces provide an interactive view of the Heston characteristic
+  function, mirroring the lecture's three-dimensional perspectives.

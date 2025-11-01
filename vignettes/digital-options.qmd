@@ -27,6 +27,9 @@ This vignette demonstrates the equivalent R API in `CompFinanceR`.
 
 ```{r}
 library(CompFinanceR)
+library(dplyr)
+library(plotly)
+library(ggplot2)
 ```
 
 ## Closed-Form Pricing
@@ -131,8 +134,6 @@ Errors remain well within the tolerance showcased in the lecture notebook.
 ## Visual Snapshot
 
 ```{r}
-library(ggplot2)
-
 ggplot(cos_prices, aes(strike, price)) +
   geom_line() +
   geom_point() +
@@ -140,6 +141,27 @@ ggplot(cos_prices, aes(strike, price)) +
     title = "Digital Call Price vs Strike",
     x = "Strike",
     y = "Price"
+  )
+```
+
+```{r}
+plot_ly(cos_prices, x = ~strike, y = ~price, type = "scatter",
+        mode = "lines+markers", line = list(color = "royalblue")) |>
+  layout(
+    title = "Digital Call Price vs Strike (Interactive)",
+    xaxis = list(title = "Strike"),
+    yaxis = list(title = "Price")
+  )
+```
+
+```{r}
+plot_ly(digital_grid, x = ~strike, y = ~price, color = ~factor(volatility),
+        type = "scatter", mode = "markers", symbol = ~factor(spot)) |>
+  layout(
+    title = "Closed-Form Digital Prices",
+    xaxis = list(title = "Strike"),
+    yaxis = list(title = "Price"),
+    legend = list(title = list(text = "Volatility"))
   )
 ```
 

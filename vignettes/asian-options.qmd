@@ -26,6 +26,9 @@ and extend that workflow in pure R using the `CompFinanceR` package.
 
 ```{r}
 library(CompFinanceR)
+library(dplyr)
+library(plotly)
+library(ggplot2)
 ```
 
 The package exports GBM specifications and Monte Carlo helpers. We set a seed
@@ -94,8 +97,6 @@ variance reduction behaviour observed in the original Python material.
 A compact plot helps communicate how prices decay with higher strikes.
 
 ```{r}
-library(ggplot2)
-
 ggplot(call_prices, aes(strike, price)) +
   geom_line() +
   geom_point() +
@@ -103,6 +104,32 @@ ggplot(call_prices, aes(strike, price)) +
     title = "Asian Call Prices vs Strike",
     x = "Strike",
     y = "Monte Carlo Price"
+  )
+```
+
+```{r}
+plot_ly(call_prices, x = ~strike, y = ~price, type = "scatter",
+        mode = "lines+markers", line = list(color = "steelblue")) |>
+  layout(
+    title = "Asian Call Prices vs Strike (Interactive)",
+    xaxis = list(title = "Strike"),
+    yaxis = list(title = "Price")
+  )
+```
+
+```{r}
+plot_ly(comparison, x = ~method, y = ~estimate, type = "bar",
+        hovertemplate = paste(
+          "Method: %{x}<br>",
+          "Estimate: %{y:.4f}<br>",
+          "Std Error: %{customdata:.4f}",
+          sep = ""
+        ),
+        customdata = comparison$std_error) |>
+  layout(
+    title = "Variance Reduction Summary",
+    xaxis = list(title = "Method"),
+    yaxis = list(title = "Price Estimate")
   )
 ```
 

@@ -26,6 +26,9 @@ analyses in R with the new barrier utilities.
 
 ```{r}
 library(CompFinanceR)
+library(dplyr)
+library(plotly)
+library(ggplot2)
 set.seed(2024)
 
 barrier_spec <- gbm_spec(
@@ -133,8 +136,6 @@ argument from the lecture.
 ## Visual Summary
 
 ```{r}
-library(ggplot2)
-
 ggplot(up_out, aes(barrier, price, colour = factor(strike))) +
   geom_point(size = 2) +
   geom_line() +
@@ -143,6 +144,27 @@ ggplot(up_out, aes(barrier, price, colour = factor(strike))) +
     x = "Barrier",
     y = "Price",
     colour = "Strike"
+  )
+```
+
+```{r}
+plot_ly(up_out, x = ~barrier, y = ~price, color = ~factor(strike),
+        type = "scatter", mode = "lines+markers") |>
+  layout(
+    title = "Up-and-Out Call Prices (Interactive)",
+    xaxis = list(title = "Barrier"),
+    yaxis = list(title = "Price"),
+    legend = list(title = list(text = "Strike"))
+  )
+```
+
+```{r}
+plot_ly(up_hits, x = ~barrier, y = ~hit_probability, type = "scatter",
+        mode = "lines+markers", line = list(color = "darkorange")) |>
+  layout(
+    title = "Barrier Hit Probability",
+    xaxis = list(title = "Barrier"),
+    yaxis = list(title = "Probability")
   )
 ```
 

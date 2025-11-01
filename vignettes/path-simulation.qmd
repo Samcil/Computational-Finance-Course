@@ -1,0 +1,204 @@
+---
+title: "Simulating GBM and ABM Paths"
+format:
+  html:
+    toc: true
+    toc-location: left
+execute:
+  message: false
+  warning: false
+  echo: true
+---
+
+## Motivation
+
+`Lecture 03/Option Pricing and Simulation in Python` introduces Brownian-driven
+models under both arithmetic and geometric dynamics and contrasts physical and
+risk-neutral measures. This vignette reproduces the Python scripts
+`GBM_ABM_paths.py`, `GBM_ABM_paths_Martingale.py`, and
+`PathsUnderQandPmeasure.py` using the unified R API.
+
+### Learning Goals
+
+- Simulate arithmetic and geometric Brownian motion in tidy format.
+- Verify martingale properties under the risk-neutral measure.
+- Compare drift adjustments between real-world (P) and risk-neutral (Q)
+  dynamics.
+
+## Package Setup
+
+```{r}
+library(CompFinanceR)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+set.seed(123)
+```
+
+## Arithmetic Brownian Motion
+
+`abm_spec()` defines the drift and volatility for arithmetic Brownian motion.
+
+```{r}
+abm <- abm_spec(
+  initial_value = 100,
+  drift = 0.05,
+  volatility = 0.2
+)
+
+abm_paths <- simulate_paths(
+  process_spec = abm,
+  n_paths = 5,
+  n_steps = 252,
+  maturity = 1
+)
+
+abm_paths
+```
+
+A quick plot mirrors the Python notebook output.
+
+```{r}
+abm_paths |>
+  ggplot(aes(time, stock_price, group = path_id)) +
+  geom_line(alpha = 0.7) +
+  labs(title = "Arithmetic Brownian Motion", x = "Time", y = "Level")
+```
+
+```{r}
+plot_ly(abm_paths, x = ~time, y = ~stock_price, color = ~factor(path_id),
+        type = "scatter", mode = "lines", showlegend = FALSE,
+        hovertemplate = paste(
+          "Path %{color}<br>",
+          "t = %{x:.3f}<br>",
+          "X_t = %{y:.3f}",
+          sep = ""
+        )) |>
+  layout(
+    title = "ABM Paths (Interactive)",
+    xaxis = list(title = "Time"),
+    yaxis = list(title = "Level")
+  )
+```
+
+## Geometric Brownian Motion
+
+`gbm_spec()` matches the familiar Black-Scholes dynamics.
+
+```{r}
+gbm <- gbm_spec(
+  initial_value = 100,
+  drift = 0.05,
+  volatility = 0.2
+)
+
+gbm_paths <- simulate_paths(gbm, n_paths = 5, n_steps = 252, maturity = 1)
+```
+
+The simulated paths stay positive by construction, as in the lecture figures.
+
+```{r}
+gbm_paths |>
+  ggplot(aes(time, stock_price, group = path_id)) +
+  geom_line(alpha = 0.7) +
+  labs(title = "Geometric Brownian Motion", x = "Time", y = "Price")
+```
+
+```{r}
+plot_ly(gbm_paths, x = ~time, y = ~stock_price, color = ~factor(path_id),
+        type = "scatter", mode = "lines", showlegend = FALSE,
+        hovertemplate = paste(
+          "Path %{color}<br>",
+          "t = %{x:.3f}<br>",
+          "S_t = %{y:.3f}",
+          sep = ""
+        )) |>
+  layout(
+    title = "GBM Paths (Interactive)",
+    xaxis = list(title = "Time"),
+    yaxis = list(title = "Price")
+  )
+```
+
+## Martingale Check Under Q
+
+The Python script shows that discounted GBM under the risk-neutral measure is a
+martingale. We recover the same result by setting the drift equal to the
+risk-free rate.
+
+```{r}
+risk_free <- 0.02
+q_spec <- gbm_spec(initial_value = 100, drift = risk_free, volatility = 0.2)
+
+q_paths <- simulate_paths(q_spec, n_paths = 1000, n_steps = 252, maturity = 1)
+
+martingale <- q_paths |>
+  mutate(discounted_price = stock_price * exp(-risk_free * time)) |>
+  group_by(time) |>
+  summarise(mean_discounted = mean(discounted_price), .groups = "drop")
+
+martingale
+```
+
+```{r}
+martingale |>
+  ggplot(aes(time, mean_discounted)) +
+  geom_line() +
+  geom_hline(yintercept = q_spec$initial_value, linetype = "dashed") +
+  labs(
+    title = "Discounted GBM Under Q",
+    x = "Time",
+    y = "Mean Discounted Price"
+  )
+```
+
+```{r}
+plot_ly(martingale, x = ~time, y = ~mean_discounted, type = "scatter",
+        mode = "lines", line = list(color = "steelblue"),
+        name = "E[e^{-rt} S_t]") |>
+  add_lines(x = ~time, y = q_spec$initial_value, name = "S0",
+            line = list(color = "black", dash = "dash"), inherit = FALSE) |>
+  layout(
+    title = "Discounted GBM Under Q (Interactive)",
+    xaxis = list(title = "Time"),
+    yaxis = list(title = "Mean Discounted Price")
+  )
+```
+
+The series stays near the initial price, matching the martingale property
+illustrated by `GBM_ABM_paths_Martingale.py`.
+
+## Comparing P and Q Measures
+
+`PathsUnderQandPmeasure.py` contrasts the drift adjustment required under the
+risk-neutral measure. We can recreate the same comparison by simulating under
+both drifts and examining expectations.
+
+```{r}
+paths_compare <- bind_rows(
+  mutate(simulate_paths(gbm, n_paths = 2000, n_steps = 252, maturity = 1), measure = "P"),
+  mutate(simulate_paths(q_spec, n_paths = 2000, n_steps = 252, maturity = 1), measure = "Q")
+)
+
+terminal_summary <- paths_compare |>
+  filter(time == 1) |>
+  group_by(measure) |>
+  summarise(
+    mean_price = mean(stock_price),
+    sd_price = sd(stock_price),
+    .groups = "drop"
+  )
+terminal_summary
+```
+
+The risk-neutral measure pushes the expected terminal price to match the
+forward price `S0 * exp((r - q) * T)` while preserving the diffusion term,
+which is the key conceptual takeaway from the Python exercises.
+
+## Key Takeaways
+
+- `simulate_paths()` unifies ABM and GBM experiments with minimal boilerplate.
+- Discounting under the risk-neutral measure produces the martingale check that
+  features prominently in Lecture 03.
+- Switching between real-world and risk-neutral drifts is as simple as changing
+  the `drift` parameter on the specification.

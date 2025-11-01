@@ -26,6 +26,9 @@ the same experiments in a tidy, reproducible pipeline.
 
 ```{r}
 library(CompFinanceR)
+library(dplyr)
+library(plotly)
+library(ggplot2)
 set.seed(99)
 ```
 
@@ -91,6 +94,16 @@ terminal_errors_gbm <- hedge_gbm |>
 mean(terminal_errors_gbm)
 ```
 
+```{r}
+plot_ly(x = terminal_errors_gbm, type = "histogram", nbinsx = 60,
+        marker = list(color = "steelblue")) |>
+  layout(
+    title = "Hedging Error Distribution (GBM)",
+    xaxis = list(title = "Hedging Error"),
+    yaxis = list(title = "Count")
+  )
+```
+
 ## Hedging with Jump Risk
 
 `simulate_delta_hedge_jumps()` delegates to the same engine while accepting
@@ -117,6 +130,20 @@ c(
 )
 ```
 
+```{r}
+plot_ly() |>
+  add_histogram(x = terminal_errors_gbm, name = "GBM", nbinsx = 50,
+                opacity = 0.6, marker = list(color = "#1f77b4")) |>
+  add_histogram(x = terminal_errors_jump, name = "Jump", nbinsx = 50,
+                opacity = 0.6, marker = list(color = "#ff7f0e")) |>
+  layout(
+    title = "GBM vs Jump Hedging Errors",
+    barmode = "overlay",
+    xaxis = list(title = "Hedging Error"),
+    yaxis = list(title = "Count")
+  )
+```
+
 Jump risk inflates both the mean absolute error and the standard deviation,
 matching the key insight of the lecture.
 
@@ -134,6 +161,18 @@ hedge_cost <- simulate_delta_hedge_bs(
 cash_diff <- hedge_gbm$bond_position - hedge_cost$bond_position
 
 tail(cash_diff, 1)
+```
+
+```{r}
+plot_ly(hedge_gbm, x = ~time, y = ~bond_position, type = "scatter", mode = "lines",
+        name = "No Cost", line = list(color = "forestgreen")) |>
+  add_lines(data = hedge_cost, x = ~time, y = ~bond_position,
+            name = "With Cost", line = list(color = "firebrick")) |>
+  layout(
+    title = "Bond Account Trajectories",
+    xaxis = list(title = "Time"),
+    yaxis = list(title = "Bond Position")
+  )
 ```
 
 The terminal cash shortfall equals the cumulative proportional costs charged on

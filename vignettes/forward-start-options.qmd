@@ -26,6 +26,9 @@ through the R translation using `CompFinanceR`.
 
 ```{r}
 library(CompFinanceR)
+library(dplyr)
+library(plotly)
+library(ggplot2)
 
 heston_spec <- heston_spec(
   initial_price = 100,
@@ -111,8 +114,6 @@ Python demonstration.
 ## Strike Sensitivity Plot
 
 ```{r}
-library(ggplot2)
-
 ggplot(cos_prices, aes(strike_adjustment, price)) +
   geom_point(size = 2) +
   geom_line() +
@@ -120,6 +121,28 @@ ggplot(cos_prices, aes(strike_adjustment, price)) +
     title = "Forward Start Call Price vs Strike Adjustment",
     x = "Strike Adjustment",
     y = "Price"
+  )
+```
+
+```{r}
+plot_ly(cos_prices, x = ~strike_adjustment, y = ~price,
+        type = "scatter", mode = "lines+markers",
+        line = list(color = "darkturquoise")) |>
+  layout(
+    title = "Forward Start Pricing (Interactive)",
+    xaxis = list(title = "Strike Adjustment"),
+    yaxis = list(title = "Price")
+  )
+```
+
+```{r}
+plot_ly(paths, x = ~time, y = ~stock_price, type = "scatter",
+        mode = "lines", line = list(color = "gray"), showlegend = FALSE,
+        transforms = list(list(type = "groupby", groups = ~path_id))) |>
+  layout(
+    title = "Heston Paths Sample",
+    xaxis = list(title = "Time"),
+    yaxis = list(title = "Stock Price")
   )
 ```
 
