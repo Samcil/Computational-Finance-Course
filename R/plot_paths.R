@@ -29,10 +29,16 @@ plot_paths <- function(paths_data,
                        theme = c("minimal", "classic", "bw")) {
   
   # Validation
+  # Use assert_integerish to allow numeric values coercible to integers (e.g., 100 instead of 100L)
   checkmate::assert_data_frame(paths_data)
-  checkmate::assert_int(n_paths_plot, lower = 1, null.ok = TRUE)
+  checkmate::assert_integerish(n_paths_plot, lower = 1, len = 1, null.ok = TRUE, any.missing = FALSE)
   checkmate::assert_number(alpha, lower = 0, upper = 1)
   theme <- match.arg(theme)
+  
+  # Coerce to integer for internal use
+  if (!is.null(n_paths_plot)) {
+    n_paths_plot <- as.integer(n_paths_plot)
+  }
   
   # Get process type from attributes
   process_type <- attr(paths_data, "process_type")

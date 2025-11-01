@@ -73,14 +73,20 @@ generate_gbm_abm_paths <- function(n_paths,
                                     return_format = c("tidy", "matrix")) {
   
   # Input validation using checkmate
-  checkmate::assert_int(n_paths, lower = 1)
-  checkmate::assert_int(n_steps, lower = 1)
+  # Use assert_integerish to allow numeric values coercible to integers (e.g., 100 instead of 100L)
+  checkmate::assert_integerish(n_paths, lower = 1, len = 1, any.missing = FALSE)
+  checkmate::assert_integerish(n_steps, lower = 1, len = 1, any.missing = FALSE)
   checkmate::assert_number(maturity, lower = 0, finite = TRUE)
   checkmate::assert_number(interest_rate, finite = TRUE)
   checkmate::assert_number(volatility, lower = 0, finite = TRUE)
   checkmate::assert_number(initial_price, lower = 0, finite = TRUE)
-  checkmate::assert_int(seed)
+  checkmate::assert_integerish(seed, len = 1, any.missing = FALSE)
   return_format <- match.arg(return_format)
+  
+  # Coerce to integer for internal use
+  n_paths <- as.integer(n_paths)
+  n_steps <- as.integer(n_steps)
+  seed <- as.integer(seed)
   
   # Set random seed for reproducibility
   set.seed(seed)
@@ -188,9 +194,13 @@ plot_gbm_abm_paths <- function(paths_data,
                                 theme = c("minimal", "classic", "bw")) {
   
   # Input validation using checkmate
-  checkmate::assert_int(max_paths, lower = 1)
+  # Use assert_integerish to allow numeric values coercible to integers (e.g., 100 instead of 100L)
+  checkmate::assert_integerish(max_paths, lower = 1, len = 1, any.missing = FALSE)
   plot_type <- match.arg(plot_type)
   theme <- match.arg(theme)
+  
+  # Coerce to integer for internal use
+  max_paths <- as.integer(max_paths)
   
   # Convert to tidy format if needed
   if (is.list(paths_data) && !tibble::is_tibble(paths_data)) {
@@ -317,13 +327,18 @@ demo_gbm_abm_paths <- function(n_paths = 25,
                                 plot = TRUE) {
   
   # Input validation using checkmate
-  checkmate::assert_int(n_paths, lower = 1)
-  checkmate::assert_int(n_steps, lower = 1)
+  # Use assert_integerish to allow numeric values coercible to integers (e.g., 100 instead of 100L)
+  checkmate::assert_integerish(n_paths, lower = 1, len = 1, any.missing = FALSE)
+  checkmate::assert_integerish(n_steps, lower = 1, len = 1, any.missing = FALSE)
   checkmate::assert_number(maturity, lower = 0, finite = TRUE)
   checkmate::assert_number(interest_rate, finite = TRUE)
   checkmate::assert_number(volatility, lower = 0, finite = TRUE)
   checkmate::assert_number(initial_price, lower = 0, finite = TRUE)
   checkmate::assert_logical(plot, len = 1)
+  
+  # Coerce to integer for internal use
+  n_paths <- as.integer(n_paths)
+  n_steps <- as.integer(n_steps)
   
   # Generate paths
   paths <- generate_gbm_abm_paths(

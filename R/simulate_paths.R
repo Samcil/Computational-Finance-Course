@@ -62,11 +62,17 @@ simulate_paths <- function(process_spec,
                            seed = 123) {
   
   # Input validation using checkmate
+  # Use assert_integerish to allow numeric values coercible to integers (e.g., 100 instead of 100L)
   checkmate::assert_class(process_spec, "process_spec")
-  checkmate::assert_int(n_paths, lower = 1)
-  checkmate::assert_int(n_steps, lower = 1)
+  checkmate::assert_integerish(n_paths, lower = 1, len = 1, any.missing = FALSE)
+  checkmate::assert_integerish(n_steps, lower = 1, len = 1, any.missing = FALSE)
   checkmate::assert_number(maturity, lower = 0, finite = TRUE)
-  checkmate::assert_int(seed)
+  checkmate::assert_integerish(seed, len = 1, any.missing = FALSE)
+  
+  # Coerce to integer for internal use
+  n_paths <- as.integer(n_paths)
+  n_steps <- as.integer(n_steps)
+  seed <- as.integer(seed)
   
   # Dispatch to appropriate engine based on process type
   UseMethod("simulate_paths", process_spec)
