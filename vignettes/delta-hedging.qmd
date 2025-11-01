@@ -1,0 +1,149 @@
+---
+title: "Delta Hedging under Diffusion and Jump Dynamics"
+format:
+  html:
+    toc: true
+    toc-location: left
+execute:
+  message: false
+  warning: false
+  echo: true
+---
+
+## Motivation
+
+`Lecture 11/BS_Hedging.py` and `Lecture 11/HedgingWithJumps.py` simulate
+discrete-time delta hedging with and without jumps. The new R wrappers expose
+the same experiments in a tidy, reproducible pipeline.
+
+### Learning Goals
+
+- Replicate Black-Scholes delta hedging with discrete rebalancing.
+- Quantify hedging error dispersion under jump-diffusion dynamics.
+- Explore the impact of transaction costs on the cash account.
+
+## Setup
+
+```{r}
+library(CompFinanceR)
+set.seed(99)
+```
+
+## Generate Underlying Paths
+
+We simulate both pure diffusion and Merton jump-diffusion paths on a shared
+time grid to mimic the Python lecture setup.
+
+```{r}
+paths_gbm <- simulate_paths(
+  gbm_spec(initial_value = 100, drift = 0.02, volatility = 0.2),
+  n_paths = 256,
+  n_steps = 128,
+  maturity = 1,
+  seed = 99
+)
+
+paths_merton <- simulate_paths(
+  merton_spec(
+    initial_price = 100,
+    risk_free_rate = 0.02,
+    volatility = 0.2,
+    jump_intensity = 0.5,
+    jump_mean = -0.1,
+    jump_sd = 0.2
+  ),
+  n_paths = 256,
+  n_steps = 128,
+  maturity = 1,
+  seed = 99
+)
+```
+
+## Define the Option Contract
+
+```{r}
+call_spec <- black_scholes_spec(
+  option_type = "call",
+  strike = 100,
+  maturity = 1,
+  risk_free_rate = 0.02
+)
+```
+
+## Hedging Under GBM
+
+`simulate_delta_hedge_bs()` mirrors the Black-Scholes hedging logic from the
+Python lecture.
+
+```{r}
+hedge_gbm <- simulate_delta_hedge_bs(
+  spot_paths = paths_gbm,
+  option_spec = call_spec,
+  volatility = 0.2,
+  hedge_steps = 128,
+  transaction_cost = 0
+)
+
+terminal_errors_gbm <- hedge_gbm |>
+  dplyr::filter(.data$time == 1) |>
+  dplyr::pull(.data$hedging_error)
+
+mean(terminal_errors_gbm)
+```
+
+## Hedging with Jump Risk
+
+`simulate_delta_hedge_jumps()` delegates to the same engine while accepting
+paths produced by jump models.
+
+```{r}
+hedge_jump <- simulate_delta_hedge_jumps(
+  spot_paths = paths_merton,
+  option_spec = call_spec,
+  diffusion_volatility = 0.2,
+  hedge_steps = 128,
+  transaction_cost = 0
+)
+
+terminal_errors_jump <- hedge_jump |>
+  dplyr::filter(.data$time == 1) |>
+  dplyr::pull(.data$hedging_error)
+
+c(
+  mean_abs_gbm = mean(abs(terminal_errors_gbm)),
+  mean_abs_jump = mean(abs(terminal_errors_jump)),
+  sd_gbm = stats::sd(terminal_errors_gbm),
+  sd_jump = stats::sd(terminal_errors_jump)
+)
+```
+
+Jump risk inflates both the mean absolute error and the standard deviation,
+matching the key insight of the lecture.
+
+## Transaction Cost Impact
+
+```{r}
+hedge_cost <- simulate_delta_hedge_bs(
+  spot_paths = paths_gbm,
+  option_spec = call_spec,
+  volatility = 0.2,
+  hedge_steps = 128,
+  transaction_cost = 0.01
+)
+
+cash_diff <- hedge_gbm$bond_position - hedge_cost$bond_position
+
+tail(cash_diff, 1)
+```
+
+The terminal cash shortfall equals the cumulative proportional costs charged on
+each rebalancing trade, aligning with the Python implementation.
+
+## Key Takeaways
+
+- Diffusion-only hedging errors concentrate tightly around zero, whereas
+  jump-diffusion hedging exhibits fatter tails.
+- Transaction costs can be layered onto the same simulation outputs for
+  sensitivity analysis.
+- The R wrappers retain the pedagogical structure of the Python notebooks while
+  providing tidy outputs for downstream summaries.

@@ -1,0 +1,132 @@
+---
+title: "Forward Start Options under Heston"
+format:
+  html:
+    toc: true
+    toc-location: left
+execute:
+  message: false
+  warning: false
+  echo: true
+---
+
+## Motivation
+
+`Lecture 12/HestonForwardStart2.py` prices forward start options by combining a
+closed-form characteristic function with the COS method. This vignette walks
+through the R translation using `CompFinanceR`.
+
+### Learning Goals
+
+- Review the forward start structure and Heston specification.
+- Use the provided characteristic function helper to obtain COS weights.
+- Validate results against a Monte Carlo benchmark.
+
+## Heston Specification
+
+```{r}
+library(CompFinanceR)
+
+heston_spec <- heston_spec(
+  initial_price = 100,
+  initial_variance = 0.04,
+  risk_free_rate = 0.015,
+  dividend_yield = 0,
+  mean_reversion = 1.4,
+  long_term_variance = 0.04,
+  vol_of_vol = 0.3,
+  correlation = -0.5,
+  scheme = "aes"
+)
+```
+
+## Pricing with COS
+
+`price_forward_start_heston()` mirrors the Python COS routine while returning a
+clean tibble for plotting and analysis.
+
+```{r}
+start <- 0.5
+maturity <- 1.5
+strike_adjustment <- c(0, 0.05, 0.1)
+
+cos_prices <- price_forward_start_heston(
+  process_spec = heston_spec,
+  start = start,
+  maturity = maturity,
+  strike_adjustment = strike_adjustment,
+  option_type = "call",
+  n_terms = 256,
+  truncation = 10
+)
+cos_prices
+```
+
+## Monte Carlo Benchmark
+
+A Monte Carlo experiment, echoing the Python script, provides a reasonableness
+check on the COS outputs.
+
+```{r}
+set.seed(42)
+paths <- generate_heston_paths_aes(
+  n_paths = 6000,
+  n_steps = 360,
+  maturity = maturity,
+  initial_price = heston_spec$initial_price,
+  initial_variance = heston_spec$initial_variance,
+  risk_free_rate = heston_spec$risk_free_rate,
+  dividend_yield = heston_spec$dividend_yield,
+  mean_reversion = heston_spec$mean_reversion,
+  long_term_variance = heston_spec$long_term_variance,
+  vol_of_vol = heston_spec$vol_of_vol,
+  correlation = heston_spec$correlation,
+  seed = 42
+)
+
+benchmark <- paths |>
+  dplyr::group_by(.data$path_id) |>
+  dplyr::summarise(
+    s_start = stock_price[which.min(abs(time - start))],
+    s_maturity = stock_price[which.min(abs(time - maturity))],
+    .groups = "drop"
+  ) |>
+  dplyr::mutate(
+    payoff = pmax(s_maturity - (1 + strike_adjustment[1]) * s_start, 0)
+  ) |>
+  dplyr::summarise(mean_payoff = mean(payoff)) |>
+  dplyr::pull(mean_payoff)
+
+adjusted_cos <- cos_prices$price[1]
+
+c(
+  cos_price = adjusted_cos,
+  mc_price = exp(-heston_spec$risk_free_rate * maturity) * benchmark
+)
+```
+
+The two pricing approaches align within Monte Carlo error, consistent with the
+Python demonstration.
+
+## Strike Sensitivity Plot
+
+```{r}
+library(ggplot2)
+
+ggplot(cos_prices, aes(strike_adjustment, price)) +
+  geom_point(size = 2) +
+  geom_line() +
+  labs(
+    title = "Forward Start Call Price vs Strike Adjustment",
+    x = "Strike Adjustment",
+    y = "Price"
+  )
+```
+
+## Key Takeaways
+
+- `forward_start_characteristic_function()` and
+  `price_forward_start_heston()` encapsulate the complex COS workflow.
+- Monte Carlo validation remains straightforward via the standard path
+  generators.
+- Outputs are immediately compatible with tidy plotting utilities.

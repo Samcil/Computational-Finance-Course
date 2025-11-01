@@ -34,9 +34,10 @@ Suggests:
     testthat (>= 3.0.0),
     knitr,
     rmarkdown,
+    quarto,
     withr,
     covr,
     mirai
-VignetteBuilder: knitr
+VignetteBuilder: quarto
 URL: https://github.com/Samcil/Computational-Finance-Course
 BugReports: https://github.com/Samcil/Computational-Finance-Course/issues

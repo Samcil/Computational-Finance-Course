@@ -11,3 +11,7 @@
 ^REFACTORING.*
 ^ACHIEVEMENT.*
 ^R_PORT_PLAN\.md$
+^vignettes/.*\.html$
+^vignettes/.*_cache/
+^vignettes/_freeze/
+^vignettes/_site/
