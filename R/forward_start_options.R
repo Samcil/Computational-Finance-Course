@@ -50,7 +50,7 @@ forward_start_characteristic_function <- function(u,
   vol_sq <- vol_of_vol^2
 
   d <- sqrt((mean_reversion - correlation * vol_of_vol * iu)^2 +
-      vol_sq * (u^2 + iu))
+    vol_sq * (u^2 + iu))
   g <- (mean_reversion - correlation * vol_of_vol * iu - d) /
     (mean_reversion - correlation * vol_of_vol * iu + d)
   exp_neg_d_tau <- exp(-d * tau)

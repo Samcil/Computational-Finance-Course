@@ -339,21 +339,21 @@ simulate_bates_aes <- function(process_spec, n_paths, n_steps, maturity, seed) {
 #' @return A tibble of simulated Bates paths.
 #' @export
 generate_bates_paths <- function(n_paths,
-                                  n_steps,
-                                  maturity,
-                                  initial_price,
-                                  initial_variance,
-                                  risk_free_rate,
-                                  dividend_yield = 0,
-                                  mean_reversion,
-                                  long_term_variance,
-                                  vol_of_vol,
-                                  correlation,
-                                  jump_intensity,
-                                  jump_mean,
-                                  jump_sd,
-                                  scheme = c("aes", "euler"),
-                                  seed = 123) {
+                                 n_steps,
+                                 maturity,
+                                 initial_price,
+                                 initial_variance,
+                                 risk_free_rate,
+                                 dividend_yield = 0,
+                                 mean_reversion,
+                                 long_term_variance,
+                                 vol_of_vol,
+                                 correlation,
+                                 jump_intensity,
+                                 jump_mean,
+                                 jump_sd,
+                                 scheme = c("aes", "euler"),
+                                 seed = 123) {
   scheme <- rlang::arg_match(scheme)
   spec <- bates_spec(
     initial_price = initial_price,

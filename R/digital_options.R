@@ -58,10 +58,10 @@ price_digital_put <- function(model_spec,
 }
 
 digital_option_price <- function(model_spec,
-                                  spot,
-                                  volatility,
-                                  payout,
-                                  option_type) {
+                                 spot,
+                                 volatility,
+                                 payout,
+                                 option_type) {
   checkmate::assert_class(model_spec, "black_scholes_spec")
   checkmate::assert_numeric(spot, lower = .Machine$double.eps, any.missing = FALSE, finite = TRUE)
   checkmate::assert_numeric(volatility, lower = .Machine$double.eps, any.missing = FALSE, finite = TRUE)

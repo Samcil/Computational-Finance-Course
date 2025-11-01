@@ -21,17 +21,17 @@
 #'
 #' @export
 simulate_delta_hedge_jumps <- function(spot_paths,
-																			 option_spec,
-																			 diffusion_volatility,
-																			 hedge_steps,
-																			 transaction_cost = 0,
-																			 initial_capital = NULL) {
-	simulate_delta_hedge_bs(
-		spot_paths = spot_paths,
-		option_spec = option_spec,
-		volatility = diffusion_volatility,
-		hedge_steps = hedge_steps,
-		transaction_cost = transaction_cost,
-		initial_capital = initial_capital
-	)
+                                       option_spec,
+                                       diffusion_volatility,
+                                       hedge_steps,
+                                       transaction_cost = 0,
+                                       initial_capital = NULL) {
+  simulate_delta_hedge_bs(
+    spot_paths = spot_paths,
+    option_spec = option_spec,
+    volatility = diffusion_volatility,
+    hedge_steps = hedge_steps,
+    transaction_cost = transaction_cost,
+    initial_capital = initial_capital
+  )
 }

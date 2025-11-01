@@ -53,7 +53,7 @@ mc_integrate_hit_or_miss <- function(g,
   checkmate::assert_numeric(g_values, len = n_samples, any.missing = FALSE)
 
   if (any(g_values < lower_bound - sqrt(.Machine$double.eps)) ||
-      any(g_values > upper_bound + sqrt(.Machine$double.eps))) {
+    any(g_values > upper_bound + sqrt(.Machine$double.eps))) {
     rlang::warn("Integrand values exceed the specified bounding box; estimates may be biased.")
   }
 
