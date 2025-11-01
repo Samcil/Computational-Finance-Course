@@ -75,12 +75,28 @@ simulate_paths <- function(process_spec,
 
 #' Create Geometric Brownian Motion Specification
 #'
-#' Specification for GBM process under risk-neutral measure:
-#'   dS(t) = r*S(t)*dt + sigma*S(t)*dW(t)
+#' Specification for GBM process under risk-neutral measure.
 #'
-#' @param initial_value Numeric. Initial value S(0).
-#' @param drift Numeric. Drift parameter (risk-free rate in risk-neutral measure).
-#' @param volatility Numeric. Volatility parameter (annualized).
+#' @param initial_value Numeric. Initial value \eqn{S_0}.
+#' @param drift Numeric. Drift parameter \eqn{\mu} (risk-free rate in risk-neutral measure).
+#' @param volatility Numeric. Volatility parameter \eqn{\sigma} (annualized).
+#' 
+#' @details
+#' ## Mathematical Formulation
+#' 
+#' The Geometric Brownian Motion follows the stochastic differential equation:
+#' \deqn{dS(t) = \mu S(t) dt + \sigma S(t) dW(t)}
+#' 
+#' Where:
+#' \itemize{
+#'   \item \eqn{S(t)} = Stock price at time \eqn{t}
+#'   \item \eqn{\mu} = Drift parameter (risk-free rate under risk-neutral measure)
+#'   \item \eqn{\sigma} = Volatility parameter (annualized standard deviation)
+#'   \item \eqn{W(t)} = Standard Brownian motion
+#' }
+#' 
+#' The analytical solution is:
+#' \deqn{S(t) = S_0 \exp\left[(\mu - \frac{\sigma^2}{2})t + \sigma W(t)\right]}
 #'
 #' @return A gbm_spec object (inherits from process_spec)
 #'
@@ -112,24 +128,44 @@ gbm_spec <- function(initial_value, drift, volatility) {
 
 #' @export
 print.gbm_spec <- function(x, ...) {
-  cat("Geometric Brownian Motion Specification\n")
-  cat("────────────────────────────────────────\n")
-  cat(sprintf("Initial value:  %g\n", x$initial_value))
-  cat(sprintf("Drift:          %g\n", x$drift))
-  cat(sprintf("Volatility:     %g\n", x$volatility))
-  cat("\nUse simulate_paths() to generate sample paths.\n")
+  cli::cli_h2("Geometric Brownian Motion Specification")
+  cli::cli_text("Process: {.emph dS(t) = \u03bc S(t) dt + \u03c3 S(t) dW(t)}")
+  cli::cli_text("")
+  cli::cli_dl(c(
+    "Initial value (S\u2080)" = cli::col_cyan("{x$initial_value}"),
+    "Drift (\u03bc)" = cli::col_green("{x$drift}"),
+    "Volatility (\u03c3)" = cli::col_blue("{x$volatility}")
+  ))
+  cli::cli_text("")
+  cli::cli_alert_info("Use {.fn simulate_paths} to generate sample paths")
   invisible(x)
 }
 
 
 #' Create Arithmetic Brownian Motion Specification
 #'
-#' Specification for ABM process:
-#'   dX(t) = mu*dt + sigma*dW(t)
+#' Specification for ABM process (also known as Brownian motion with drift).
 #'
-#' @param initial_value Numeric. Initial value X(0).
-#' @param drift Numeric. Drift parameter.
-#' @param volatility Numeric. Volatility parameter (annualized).
+#' @param initial_value Numeric. Initial value \eqn{X_0}.
+#' @param drift Numeric. Drift parameter \eqn{\mu}.
+#' @param volatility Numeric. Volatility parameter \eqn{\sigma} (annualized).
+#' 
+#' @details
+#' ## Mathematical Formulation
+#' 
+#' The Arithmetic Brownian Motion follows the stochastic differential equation:
+#' \deqn{dX(t) = \mu dt + \sigma dW(t)}
+#' 
+#' Where:
+#' \itemize{
+#'   \item \eqn{X(t)} = Process value at time \eqn{t}
+#'   \item \eqn{\mu} = Drift parameter (deterministic trend)
+#'   \item \eqn{\sigma} = Volatility parameter (annualized standard deviation)
+#'   \item \eqn{W(t)} = Standard Brownian motion
+#' }
+#' 
+#' The analytical solution is:
+#' \deqn{X(t) = X_0 + \mu t + \sigma W(t)}
 #'
 #' @return An abm_spec object (inherits from process_spec)
 #'
@@ -161,11 +197,15 @@ abm_spec <- function(initial_value, drift, volatility) {
 
 #' @export
 print.abm_spec <- function(x, ...) {
-  cat("Arithmetic Brownian Motion Specification\n")
-  cat("─────────────────────────────────────────\n")
-  cat(sprintf("Initial value:  %g\n", x$initial_value))
-  cat(sprintf("Drift:          %g\n", x$drift))
-  cat(sprintf("Volatility:     %g\n", x$volatility))
-  cat("\nUse simulate_paths() to generate sample paths.\n")
+  cli::cli_h2("Arithmetic Brownian Motion Specification")
+  cli::cli_text("Process: {.emph dX(t) = \u03bc dt + \u03c3 dW(t)}")
+  cli::cli_text("")
+  cli::cli_dl(c(
+    "Initial value (X\u2080)" = cli::col_cyan("{x$initial_value}"),
+    "Drift (\u03bc)" = cli::col_green("{x$drift}"),
+    "Volatility (\u03c3)" = cli::col_blue("{x$volatility}")
+  ))
+  cli::cli_text("")
+  cli::cli_alert_info("Use {.fn simulate_paths} to generate sample paths")
   invisible(x)
 }

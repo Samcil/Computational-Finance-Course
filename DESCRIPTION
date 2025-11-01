@@ -27,6 +27,7 @@ Imports:
     tidyr (>= 1.1.0),
     rlang (>= 1.0.0),
     checkmate (>= 2.0.0),
+    cli (>= 3.0.0),
     MASS,
     stats
 Suggests:

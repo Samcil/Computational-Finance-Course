@@ -109,20 +109,20 @@ get_plot_config <- function(process_type, spec) {
     list(
       title = "Geometric Brownian Motion Paths",
       subtitle = sprintf(
-        "dS(t) = %.4f·S(t)·dt + %.4f·S(t)·dW(t) | S(0) = %.2f",
+        "dS(t) = \u03bc S(t) dt + \u03c3 S(t) dW(t)  |  \u03bc = %.4f, \u03c3 = %.4f, S\u2080 = %.2f",
         spec$drift, spec$volatility, spec$initial_value
       ),
-      y_label = "Stock Price",
+      y_label = "Stock Price S(t)",
       color = "steelblue"
     )
   } else if (process_type == "abm") {
     list(
       title = "Arithmetic Brownian Motion Paths",
       subtitle = sprintf(
-        "dX(t) = %.4f·dt + %.4f·dW(t) | X(0) = %.2f",
+        "dX(t) = \u03bc dt + \u03c3 dW(t)  |  \u03bc = %.4f, \u03c3 = %.4f, X\u2080 = %.2f",
         spec$drift, spec$volatility, spec$initial_value
       ),
-      y_label = "Process Value",
+      y_label = "Process Value X(t)",
       color = "darkred"
     )
   } else {
