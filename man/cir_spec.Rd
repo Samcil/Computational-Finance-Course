@@ -4,7 +4,14 @@
 \alias{cir_spec}
 \title{Create CIR Process Specification}
 \usage{
-cir_spec(initial_value, mean_reversion, long_term_mean, volatility)
+cir_spec(
+  initial_value,
+  mean_reversion,
+  long_term_mean,
+  volatility,
+  engine = "euler",
+  engine_options = list()
+)
 }
 \arguments{
 \item{initial_value}{Numeric. Initial variance/rate \eqn{v_0}.}
@@ -14,6 +21,12 @@ cir_spec(initial_value, mean_reversion, long_term_mean, volatility)
 \item{long_term_mean}{Numeric. Long-term equilibrium level \eqn{\theta > 0}.}
 
 \item{volatility}{Numeric. Volatility of volatility \eqn{\sigma > 0}.}
+
+\item{engine}{Character identifier for the simulation engine. Defaults to
+"euler".}
+
+\item{engine_options}{Named list of engine-specific options passed to
+\code{\link[=set_engine]{set_engine()}}. Reserved for future use.}
 }
 \value{
 A cir_spec object containing the process parameters.

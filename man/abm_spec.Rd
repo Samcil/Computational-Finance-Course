@@ -14,7 +14,7 @@ abm_spec(initial_value, drift, volatility)
 \item{volatility}{Numeric. Volatility parameter \eqn{\sigma} (annualized).}
 }
 \value{
-An abm_spec object (inherits from process_spec)
+An abm_spec object (inherits from model_spec)
 }
 \description{
 Specification for ABM process (also known as Brownian motion with drift).

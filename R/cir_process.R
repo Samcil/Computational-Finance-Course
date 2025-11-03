@@ -7,6 +7,10 @@
 #' @param mean_reversion Numeric. Mean reversion speed \eqn{\kappa > 0}.
 #' @param long_term_mean Numeric. Long-term equilibrium level \eqn{\theta > 0}.
 #' @param volatility Numeric. Volatility of volatility \eqn{\sigma > 0}.
+#' @param engine Character identifier for the simulation engine. Defaults to
+#'   "euler".
+#' @param engine_options Named list of engine-specific options passed to
+#'   [set_engine()]. Reserved for future use.
 #'
 #' @details
 #' ## Mathematical Formulation
@@ -36,12 +40,18 @@
 #'   plot_paths()
 #'
 #' @export
-cir_spec <- function(initial_value, mean_reversion, long_term_mean, volatility) {
+cir_spec <- function(initial_value,
+                     mean_reversion,
+                     long_term_mean,
+                     volatility,
+                     engine = "euler",
+                     engine_options = list()) {
   # Validation
   checkmate::assert_number(initial_value, lower = 0, finite = TRUE)
   checkmate::assert_number(mean_reversion, lower = 0, finite = TRUE)
   checkmate::assert_number(long_term_mean, lower = 0, finite = TRUE)
   checkmate::assert_number(volatility, lower = 0, finite = TRUE)
+  checkmate::assert_list(engine_options, names = "unique", null.ok = FALSE)
 
   # Feller condition check
   feller <- 2 * mean_reversion * long_term_mean
@@ -52,15 +62,26 @@ cir_spec <- function(initial_value, mean_reversion, long_term_mean, volatility) 
     cli::cli_alert_info("Process may reach zero with positive probability")
   }
 
-  structure(
-    list(
+  spec <- new_diffusion_spec(
+    class = "cir_spec",
+    args = list(
       initial_value = initial_value,
       mean_reversion = mean_reversion,
       long_term_mean = long_term_mean,
       volatility = volatility
     ),
-    class = c("cir_spec", "process_spec")
+    process_type = "cir"
   )
+
+  spec <- set_process_metadata(
+    spec,
+    family = "cir_family",
+    feller_threshold = feller,
+    engines = list(simulate = "euler")
+  )
+
+  engine_options <- rlang::list2(!!!engine_options)
+  set_engine(spec, engine = engine, !!!engine_options)
 }
 
 #' @export
@@ -68,12 +89,16 @@ print.cir_spec <- function(x, ...) {
   cli::cli_h2("CIR Process Specification")
   cli::cli_text("Process: dv(t) = \u03ba(\u03b8 - v(t))dt + \u03c3\u221av(t)dW(t)")
   cli::cli_text("")
+  engine_label <- if (is.null(x$method$engine)) "<unset>" else x$method$engine
   cli::cli_dl(c(
     "Initial value (v\u2080)" = cli::col_cyan("{x$initial_value}"),
     "Mean reversion (\u03ba)" = cli::col_green("{x$mean_reversion}"),
     "Long-term mean (\u03b8)" = cli::col_blue("{x$long_term_mean}"),
-    "Volatility (\u03c3)" = cli::col_magenta("{x$volatility}")
+    "Volatility (\u03c3)" = cli::col_magenta("{x$volatility}"),
+    "Engine" = cli::col_magenta(engine_label)
   ))
+  cli::cli_text("")
+  cli::cli_text("{.strong Lineage:} {format_spec_lineage(x)}")
   cli::cli_text("")
   feller <- 2 * x$mean_reversion * x$long_term_mean
   if (feller >= x$volatility^2) {
@@ -108,6 +133,14 @@ simulate_paths.cir_spec <- function(process_spec, n_paths, n_steps, maturity, se
   n_paths <- as.integer(n_paths)
   n_steps <- as.integer(n_steps)
   seed <- as.integer(seed)
+
+  engine <- process_spec$method$engine
+  if (is.null(engine)) {
+    rlang::abort("CIR specification has no engine set; construct via cir_spec() or set_engine().")
+  }
+  if (!identical(engine, "euler")) {
+    rlang::abort("Unsupported engine for CIR specification. Available engine: 'euler'.")
+  }
 
   # Set seed
   set.seed(seed)
@@ -154,4 +187,12 @@ simulate_paths.cir_spec <- function(process_spec, n_paths, n_steps, maturity, se
   attr(paths_tidy, "long_term_mean") <- theta
 
   paths_tidy
+}
+
+
+#' @export
+set_engine.cir_spec <- function(object, engine, ...) {
+  checkmate::assert_choice(engine, choices = c("euler"))
+  eng_args <- rlang::list2(...)
+  set_engine_base(object, engine = engine, eng_args = eng_args)
 }

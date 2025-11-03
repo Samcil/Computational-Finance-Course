@@ -28,7 +28,7 @@
 #' hitting zero. When the condition is violated the Euler scheme still runs but
 #' the variance is reflected at zero during simulation.
 #'
-#' @return An object of class `heston_spec` inheriting from `process_spec`.
+#' @return An object of class `heston_spec` inheriting from `model_spec`.
 #'
 #' @examples
 #' spec <- heston_spec(
@@ -76,8 +76,9 @@ heston_spec <- function(initial_price,
     cli::cli_alert_info("Variance process may hit zero; Euler simulation reflects at zero, AES sampling remains non-negative")
   }
 
-  structure(
-    list(
+  spec <- new_stochastic_vol_spec(
+    class = "heston_spec",
+    args = list(
       initial_price = initial_price,
       initial_variance = initial_variance,
       risk_free_rate = risk_free_rate,
@@ -88,8 +89,20 @@ heston_spec <- function(initial_price,
       correlation = correlation,
       scheme = scheme
     ),
-    class = c("heston_spec", "process_spec")
+    process_type = "heston"
   )
+
+  spec <- set_process_metadata(
+    spec,
+    variance_process = "cir",
+    default_scheme = scheme,
+    engines = list(
+      simulate = c("euler", "aes"),
+      price = "cos"
+    )
+  )
+
+  spec
 }
 
 #' @export
@@ -109,6 +122,8 @@ print.heston_spec <- function(x, ...) {
     "Correlation (\u03c1)" = cli::col_yellow("{format(x$correlation, digits = 6)}"),
     "Scheme" = cli::col_cyan(x$scheme)
   ))
+  cli::cli_text("")
+  cli::cli_text("{.strong Lineage:} {format_spec_lineage(x)}")
   cli::cli_text("")
   cli::cli_alert_info("Use {.fn simulate_paths} to generate joint price/variance paths")
   invisible(x)

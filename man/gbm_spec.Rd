@@ -14,7 +14,7 @@ gbm_spec(initial_value, drift, volatility)
 \item{volatility}{Numeric. Volatility parameter \eqn{\sigma} (annualized).}
 }
 \value{
-A gbm_spec object (inherits from process_spec)
+A gbm_spec object (inherits from model_spec)
 }
 \description{
 Specification for GBM process under risk-neutral measure.

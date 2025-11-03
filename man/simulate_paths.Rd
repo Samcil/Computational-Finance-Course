@@ -7,7 +7,8 @@
 simulate_paths(process_spec, n_paths, n_steps, maturity, seed = 123, ...)
 }
 \arguments{
-\item{process_spec}{A process specification object created by one of:
+\item{process_spec}{A model specification object (inherits from
+\code{model_spec}) created by one of:
 \itemize{
 \item \code{gbm_spec()} for Geometric Brownian Motion
 \item \code{abm_spec()} for Arithmetic Brownian Motion
@@ -16,6 +17,7 @@ simulate_paths(process_spec, n_paths, n_steps, maturity, seed = 123, ...)
 \item \code{correlated_bm_spec()} for correlated Brownian motion
 \item \code{heston_spec()} for Heston stochastic volatility model
 \item \code{merton_spec()} for Merton jump-diffusion
+\item \code{short_rate_spec()} for short-rate models (e.g., Ho-Lee)
 }}
 
 \item{n_paths}{Integer. Number of Monte Carlo paths to simulate.}

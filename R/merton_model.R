@@ -10,7 +10,7 @@
 #' @param jump_mean Numeric. Mean of the logarithmic jump size \eqn{\mu_J}.
 #' @param jump_sd Numeric. Standard deviation of the logarithmic jump size \eqn{\sigma_J > 0}.
 #'
-#' @return An object of class `merton_spec` inheriting from `process_spec`.
+#' @return An object of class `merton_spec` inheriting from `model_spec`.
 #'
 #' @examples
 #' spec <- merton_spec(
@@ -39,8 +39,9 @@ merton_spec <- function(initial_price,
   checkmate::assert_number(jump_mean, finite = TRUE)
   checkmate::assert_number(jump_sd, lower = 0, finite = TRUE)
 
-  structure(
-    list(
+  spec <- new_jump_diffusion_spec(
+    class = "merton_spec",
+    args = list(
       initial_price = initial_price,
       risk_free_rate = risk_free_rate,
       volatility = volatility,
@@ -48,8 +49,17 @@ merton_spec <- function(initial_price,
       jump_mean = jump_mean,
       jump_sd = jump_sd
     ),
-    class = c("merton_spec", "process_spec")
+    process_type = "merton"
   )
+
+  spec <- set_process_metadata(
+    spec,
+    jump_distribution = "lognormal",
+    diffusion_parent = "gbm_spec",
+    engines = list(simulate = "euler")
+  )
+
+  spec
 }
 
 #' @export
@@ -63,6 +73,8 @@ print.merton_spec <- function(x, ...) {
     "Jump mean (\u03bc_J)" = cli::col_yellow("{format(x$jump_mean, digits = 6)}"),
     "Jump SD (\u03c3_J)" = cli::col_yellow("{format(x$jump_sd, digits = 6)}")
   ))
+  cli::cli_text("")
+  cli::cli_text("{.strong Lineage:} {format_spec_lineage(x)}")
   cli::cli_text("")
   cli::cli_alert_info("Use {.fn simulate_paths} to generate jump-diffusion paths")
   invisible(x)

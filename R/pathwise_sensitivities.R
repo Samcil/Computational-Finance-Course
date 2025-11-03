@@ -55,18 +55,19 @@ pathwise_delta <- function(paths,
   discount_factor <- exp(-risk_free_rate * maturity)
   sign_multiplier <- if (option_type == "call") 1 else -1
 
-  purrr::map(
-    strikes,
-    \(strike) {
-      indicator <- if (option_type == "call") {
-        terminal_prices > strike
-      } else {
-        terminal_prices < strike
-      }
-      estimator <- discount_factor * sign_multiplier * mean((terminal_prices / initial_price) * indicator)
-      tibble::tibble(strike = strike, delta_pathwise = estimator)
-    }
-  ) |> purrr::list_rbind()
+  delta_vals <- pathwise_delta_cpp(
+    terminal_prices = terminal_prices,
+    strikes = strikes,
+    initial_price = initial_price,
+    discount_factor = discount_factor,
+    sign_multiplier = sign_multiplier,
+    is_call = identical(option_type, "call")
+  )
+
+  tibble::tibble(
+    strike = strikes,
+    delta_pathwise = delta_vals
+  )
 }
 
 #' Pathwise Vega Estimator for Geometric Brownian Motion
@@ -121,18 +122,20 @@ pathwise_vega <- function(paths,
   log_term <- log(terminal_prices / initial_price)
   adjustment <- log_term - (risk_free_rate + 0.5 * volatility^2) * maturity
 
-  purrr::map(
-    strikes,
-    \(strike) {
-      indicator <- if (option_type == "call") {
-        terminal_prices > strike
-      } else {
-        terminal_prices < strike
-      }
-      estimator <- discount_factor * sign_multiplier * mean((terminal_prices / volatility) * adjustment * indicator)
-      tibble::tibble(strike = strike, vega_pathwise = estimator)
-    }
-  ) |> purrr::list_rbind()
+  vega_vals <- pathwise_vega_cpp(
+    terminal_prices = terminal_prices,
+    adjustment = adjustment,
+    strikes = strikes,
+    volatility = volatility,
+    discount_factor = discount_factor,
+    sign_multiplier = sign_multiplier,
+    is_call = identical(option_type, "call")
+  )
+
+  tibble::tibble(
+    strike = strikes,
+    vega_pathwise = vega_vals
+  )
 }
 
 #' Compare Pathwise and Finite Difference Greek Estimators

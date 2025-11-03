@@ -27,7 +27,7 @@ merton_spec(
 \item{jump_sd}{Numeric. Standard deviation of the logarithmic jump size \eqn{\sigma_J > 0}.}
 }
 \value{
-An object of class \code{merton_spec} inheriting from \code{process_spec}.
+An object of class \code{merton_spec} inheriting from \code{model_spec}.
 }
 \description{
 Defines the parameters for the Merton (1976) jump-diffusion model where the

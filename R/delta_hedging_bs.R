@@ -105,17 +105,10 @@ simulate_delta_hedge_path <- function(path_tbl,
   stock_prices <- path_tbl$stock_price
   n_steps <- length(times)
 
-  option_values <- numeric(n_steps)
-  theoretical_delta <- numeric(n_steps)
-  held_delta <- numeric(n_steps)
-  bond_position <- numeric(n_steps)
-  portfolio_value <- numeric(n_steps)
-  hedging_error <- rep(NA_real_, n_steps)
+  evolve_step <- function(state, idx) {
+    cash_account <- state$cash_account
+    current_delta <- state$current_delta
 
-  cash_account <- initial_capital
-  current_delta <- 0
-
-  for (idx in seq_len(n_steps)) {
     if (idx > 1) {
       dt <- times[idx] - times[idx - 1]
       cash_account <- cash_account * exp(risk_free_rate * dt)
@@ -132,12 +125,9 @@ simulate_delta_hedge_path <- function(path_tbl,
       volatility = volatility
     )
 
-    option_values[idx] <- metrics$price
-    theoretical_delta[idx] <- metrics$delta
-
     rebalance_now <- idx < n_steps && any(abs(times[idx] - rebalancing_times) <= 1e-10)
     if (idx == 1 || rebalance_now) {
-      delta_target <- theoretical_delta[idx]
+      delta_target <- metrics$delta
       trade_size <- delta_target - current_delta
       if (!dplyr::near(trade_size, 0, tol = 1e-12)) {
         trade_notional <- trade_size * stock_prices[idx]
@@ -146,21 +136,39 @@ simulate_delta_hedge_path <- function(path_tbl,
       }
     }
 
-    held_delta[idx] <- current_delta
-    bond_position[idx] <- cash_account
-    portfolio_value[idx] <- cash_account + current_delta * stock_prices[idx]
+    bond_position <- cash_account
+    portfolio_value <- cash_account + current_delta * stock_prices[idx]
+
+    record <- tibble::tibble(
+      option_value = metrics$price,
+      delta = current_delta,
+      bond_position = bond_position,
+      portfolio_value = portfolio_value,
+      hedging_error = NA_real_
+    )
+
+    list(
+      cash_account = cash_account,
+      current_delta = current_delta,
+      records = append(state$records, list(record))
+    )
   }
 
+  initial_state <- list(cash_account = initial_capital, current_delta = 0, records = list())
+  states <- purrr::accumulate(seq_len(n_steps), evolve_step, .init = initial_state)
+  final_state <- states[[length(states)]]
+  records <- purrr::list_rbind(final_state$records)
+
   payoff <- bs_option_payoff(stock_prices[length(stock_prices)], option_spec)
-  hedging_error[n_steps] <- portfolio_value[n_steps] - payoff
+  records$hedging_error[[n_steps]] <- records$portfolio_value[[n_steps]] - payoff
 
   path_tbl |>
     dplyr::mutate(
-      option_value = option_values,
-      delta = held_delta,
-      bond_position = bond_position,
-      portfolio_value = portfolio_value,
-      hedging_error = hedging_error
+      option_value = records$option_value,
+      delta = records$delta,
+      bond_position = records$bond_position,
+      portfolio_value = records$portfolio_value,
+      hedging_error = records$hedging_error
     )
 }
 

@@ -38,7 +38,7 @@ the Brownian motions driving price and variance.}
 or \code{"aes"} for the Andersen quadratic exponential scheme.}
 }
 \value{
-An object of class \code{heston_spec} inheriting from \code{process_spec}.
+An object of class \code{heston_spec} inheriting from \code{model_spec}.
 }
 \description{
 Defines the stochastic volatility dynamics introduced by Heston (1993).

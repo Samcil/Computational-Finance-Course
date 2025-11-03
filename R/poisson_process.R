@@ -67,13 +67,22 @@ poisson_spec <- function(intensity, initial_value = 0) {
   checkmate::assert_number(intensity, lower = 0, finite = TRUE)
   checkmate::assert_number(initial_value, finite = TRUE)
 
-  # Create specification object
-  spec <- list(
-    intensity = intensity,
-    initial_value = initial_value
+  spec <- new_jump_spec(
+    class = "poisson_spec",
+    args = list(
+      intensity = intensity,
+      initial_value = initial_value
+    ),
+    process_type = "poisson"
   )
 
-  class(spec) <- c("poisson_spec", "process_spec")
+  spec <- set_process_metadata(
+    spec,
+    event_type = "counting_process",
+    martingale = TRUE,
+    engines = list(simulate = "euler")
+  )
+
   spec
 }
 
@@ -93,6 +102,8 @@ print.poisson_spec <- function(x, ...) {
     "Initial value (N\u2080)" = cli::col_cyan("{format(x$initial_value, digits = 6)}"),
     "Intensity (\u03bb)" = cli::col_green("{format(x$intensity, digits = 6)}")
   ))
+  cli::cli_text("")
+  cli::cli_text("{.strong Lineage:} {format_spec_lineage(x)}")
   cli::cli_text("")
   cli::cli_text("{.strong Process types:} standard, compensated")
   cli::cli_text("{.emph Compensated:} \u00d1(t) = N(t) - \u03bb t (martingale)")

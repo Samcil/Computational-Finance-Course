@@ -21,9 +21,6 @@ simulate_paths.gbm_spec <- function(process_spec,
                                     maturity,
                                     seed = 123,
                                     ...) {
-  # Set seed
-  set.seed(seed)
-
   # Extract parameters
   S0 <- process_spec$initial_value
   r <- process_spec$drift
@@ -32,8 +29,12 @@ simulate_paths.gbm_spec <- function(process_spec,
   # Time step
   dt <- maturity / n_steps
 
+  time_grid <- seq(0, maturity, length.out = n_steps + 1)
+
   # Generate standardized random samples
-  Z <- generate_standardized_normals(n_paths, n_steps)
+  Z <- with_random_seed(seed, {
+    generate_standardized_normals(n_paths, n_steps)
+  })
 
   # Compute log-price increments
   log_increments <- (r - 0.5 * sigma^2) * dt + sigma * sqrt(dt) * Z
@@ -46,9 +47,6 @@ simulate_paths.gbm_spec <- function(process_spec,
 
   # Convert to stock prices
   stock_prices <- exp(log_prices)
-
-  # Create time grid
-  time_grid <- seq(0, maturity, length.out = n_steps + 1)
 
   # Convert to tidy tibble using modern purrr
   paths_tidy <- matrix_to_tidy(
@@ -75,9 +73,6 @@ simulate_paths.abm_spec <- function(process_spec,
                                     maturity,
                                     seed = 123,
                                     ...) {
-  # Set seed
-  set.seed(seed)
-
   # Extract parameters
   X0 <- process_spec$initial_value
   mu <- process_spec$drift
@@ -86,8 +81,12 @@ simulate_paths.abm_spec <- function(process_spec,
   # Time step
   dt <- maturity / n_steps
 
+  time_grid <- seq(0, maturity, length.out = n_steps + 1)
+
   # Generate standardized random samples
-  Z <- generate_standardized_normals(n_paths, n_steps)
+  Z <- with_random_seed(seed, {
+    generate_standardized_normals(n_paths, n_steps)
+  })
 
   # Compute increments
   increments <- mu * dt + sigma * sqrt(dt) * Z
@@ -97,9 +96,6 @@ simulate_paths.abm_spec <- function(process_spec,
     initial_value = X0,
     increments = increments
   )
-
-  # Create time grid
-  time_grid <- seq(0, maturity, length.out = n_steps + 1)
 
   # Convert to tidy tibble
   paths_tidy <- matrix_to_tidy(
@@ -206,4 +202,48 @@ matrix_to_tidy <- function(value_matrix, time_grid, value_name = "value") {
 
   # Use modern list_rbind instead of map_dfr
   purrr::list_rbind(path_tibbles)
+}
+
+
+#' Simulate Gaussian Short-Rate Paths
+#'
+#' Generates short-rate and discount-factor trajectories for Gaussian models
+#' using the shared random number infrastructure.
+#'
+#' @keywords internal
+simulate_gaussian_short_rate_paths <- function(process_spec,
+                                               n_paths,
+                                               n_steps,
+                                               maturity,
+                                               seed,
+                                               ...) {
+  dt <- maturity / n_steps
+  sqrt_dt <- sqrt(dt)
+  times <- seq(0, maturity, length.out = n_steps + 1)
+
+  args <- process_spec$args
+  state <- short_rate_state(process_spec)
+
+  shocks <- with_random_seed(seed, {
+    generate_standardized_normals(n_paths, n_steps)
+  })
+
+  shocks <- args$volatility * sqrt_dt * shocks
+
+  theta_values <- state$theta_fun_vec(times[seq_len(n_steps)])
+  mean_reversion <- args$mean_reversion
+
+  evolved <- gaussian_short_rate_paths_cpp(
+    shocks = shocks,
+    theta = theta_values,
+    initial_rate = args$initial_rate,
+    mean_reversion = mean_reversion,
+    dt = dt
+  )
+
+  list(
+    time = times,
+    rates = evolved$rates,
+    discounts = evolved$discounts
+  )
 }

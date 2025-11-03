@@ -58,15 +58,25 @@ correlated_bm_spec <- function(initial_values,
   }
   checkmate::assert_character(component_names, len = length(initial_values), any.missing = FALSE)
 
-  structure(
-    list(
+  spec <- new_diffusion_spec(
+    class = "correlated_bm_spec",
+    args = list(
       initial_values = initial_values,
       drift = drift,
       covariance_matrix = covariance_matrix,
       component_names = component_names
     ),
-    class = c("correlated_bm_spec", "process_spec")
+    process_type = "correlated_bm"
   )
+
+  spec <- set_process_metadata(
+    spec,
+    dimension = length(initial_values),
+    covariance_rank = sum(eigenvalues > 0),
+    engines = list(simulate = "euler")
+  )
+
+  spec
 }
 
 #' @export
@@ -78,6 +88,8 @@ print.correlated_bm_spec <- function(x, ...) {
     "Dimensions" = cli::col_cyan(length(x$initial_values)),
     "Component names" = cli::col_green(paste(x$component_names, collapse = ", "))
   ))
+  cli::cli_text("")
+  cli::cli_text("{.strong Lineage:} {format_spec_lineage(x)}")
   cli::cli_text("")
   cli::cli_alert_info("Use {.fn simulate_paths} to generate correlated paths")
   invisible(x)

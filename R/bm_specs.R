@@ -33,7 +33,7 @@ NULL
 #' The analytical solution is:
 #' \deqn{S(t) = S_0 \exp\left[(\mu - \frac{\sigma^2}{2})t + \sigma W(t)\right]}
 #'
-#' @return A gbm_spec object (inherits from process_spec)
+#' @return A gbm_spec object (inherits from model_spec)
 #'
 #' @examples
 #' spec <- gbm_spec(initial_value = 100, drift = 0.05, volatility = 0.2)
@@ -45,16 +45,24 @@ gbm_spec <- function(initial_value, drift, volatility) {
   checkmate::assert_number(drift, finite = TRUE)
   checkmate::assert_number(volatility, lower = 0, finite = TRUE)
 
-  # Create specification object
-  spec <- list(
-    initial_value = initial_value,
-    drift = drift,
-    volatility = volatility,
-    process_type = "gbm"
+  spec <- new_diffusion_spec(
+    class = "gbm_spec",
+    args = list(
+      initial_value = initial_value,
+      drift = drift,
+      volatility = volatility
+    ),
+    process_type = "gbm",
+    inheritance = "abm_spec"
   )
 
-  # Set class hierarchy for dispatch
-  class(spec) <- c("gbm_spec", "process_spec", "list")
+  spec <- set_process_metadata(
+    spec,
+    parent_spec = "abm_spec",
+    state_transform = "exp",
+    notes = "Log-state Euler scheme shares implementation with ABM",
+    engines = list(simulate = "euler")
+  )
 
   spec
 }
@@ -70,6 +78,8 @@ print.gbm_spec <- function(x, ...) {
     "Drift (\u03bc)" = cli::col_green("{format(x$drift, digits = 6)}"),
     "Volatility (\u03c3)" = cli::col_blue("{format(x$volatility, digits = 6)}")
   ))
+  cli::cli_text("")
+  cli::cli_text("{.strong Lineage:} {format_spec_lineage(x)}")
   cli::cli_text("")
   cli::cli_alert_info("Use {.fn simulate_paths} to generate sample paths")
   invisible(x)
@@ -101,7 +111,7 @@ print.gbm_spec <- function(x, ...) {
 #' The analytical solution is:
 #' \deqn{X(t) = X_0 + \mu t + \sigma W(t)}
 #'
-#' @return An abm_spec object (inherits from process_spec)
+#' @return An abm_spec object (inherits from model_spec)
 #'
 #' @examples
 #' spec <- abm_spec(initial_value = 0, drift = 0.03, volatility = 0.2)
@@ -113,16 +123,22 @@ abm_spec <- function(initial_value, drift, volatility) {
   checkmate::assert_number(drift, finite = TRUE)
   checkmate::assert_number(volatility, lower = 0, finite = TRUE)
 
-  # Create specification object
-  spec <- list(
-    initial_value = initial_value,
-    drift = drift,
-    volatility = volatility,
+  spec <- new_diffusion_spec(
+    class = "abm_spec",
+    args = list(
+      initial_value = initial_value,
+      drift = drift,
+      volatility = volatility
+    ),
     process_type = "abm"
   )
 
-  # Set class hierarchy for dispatch
-  class(spec) <- c("abm_spec", "process_spec", "list")
+  spec <- set_process_metadata(
+    spec,
+    state_transform = "identity",
+    notes = "Baseline diffusion used as parent for GBM",
+    engines = list(simulate = "euler")
+  )
 
   spec
 }
@@ -138,6 +154,8 @@ print.abm_spec <- function(x, ...) {
     "Drift (\u03bc)" = cli::col_green("{format(x$drift, digits = 6)}"),
     "Volatility (\u03c3)" = cli::col_blue("{format(x$volatility, digits = 6)}")
   ))
+  cli::cli_text("")
+  cli::cli_text("{.strong Lineage:} {format_spec_lineage(x)}")
   cli::cli_text("")
   cli::cli_alert_info("Use {.fn simulate_paths} to generate sample paths")
   invisible(x)

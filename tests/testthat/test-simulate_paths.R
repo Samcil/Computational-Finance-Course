@@ -14,11 +14,16 @@ test_that("gbm_spec creates valid specification", {
   )
 
   expect_s3_class(spec, "gbm_spec")
+  expect_s3_class(spec, "abm_spec")
+  expect_s3_class(spec, "diffusion_spec")
   expect_s3_class(spec, "process_spec")
+  expect_s3_class(spec, "model_spec")
   expect_equal(spec$initial_value, 100)
   expect_equal(spec$drift, 0.05)
   expect_equal(spec$volatility, 0.2)
   expect_equal(spec$process_type, "gbm")
+  expect_equal(spec$metadata$parent_spec, "abm_spec")
+  expect_equal(spec$metadata$state_transform, "exp")
 })
 
 
@@ -30,11 +35,14 @@ test_that("abm_spec creates valid specification", {
   )
 
   expect_s3_class(spec, "abm_spec")
+  expect_s3_class(spec, "diffusion_spec")
   expect_s3_class(spec, "process_spec")
+  expect_s3_class(spec, "model_spec")
   expect_equal(spec$initial_value, 0)
   expect_equal(spec$drift, 0.03)
   expect_equal(spec$volatility, 0.15)
   expect_equal(spec$process_type, "abm")
+  expect_equal(spec$metadata$state_transform, "identity")
 })
 
 
@@ -191,7 +199,7 @@ test_that("poisson_spec creates valid specification", {
   spec <- poisson_spec(intensity = 1.0, initial_value = 0)
 
   expect_s3_class(spec, "poisson_spec")
-  expect_s3_class(spec, "process_spec")
+  expect_s3_class(spec, "model_spec")
   expect_equal(spec$intensity, 1.0)
   expect_equal(spec$initial_value, 0)
 })
@@ -301,9 +309,10 @@ test_that("poisson process pipeline works", {
 test_that("cir_spec creates valid specification", {
   spec <- cir_spec(0.05, mean_reversion = 3, long_term_mean = 0.04, volatility = 0.25)
   expect_s3_class(spec, "cir_spec")
-  expect_s3_class(spec, "process_spec")
-  expect_equal(spec$initial_value, 0.05)
-  expect_equal(spec$mean_reversion, 3)
+  expect_s3_class(spec, "model_spec")
+  expect_equal(spec$args$initial_value, 0.05)
+  expect_equal(spec$args$mean_reversion, 3)
+  expect_equal(spec$method$engine, "euler")
 })
 
 test_that("simulate_paths.cir_spec returns tidy output", {
@@ -360,7 +369,7 @@ test_that("heston_spec creates valid specification", {
     correlation = -0.7
   )
   expect_s3_class(spec, "heston_spec")
-  expect_s3_class(spec, "process_spec")
+  expect_s3_class(spec, "model_spec")
   expect_equal(spec$scheme, "euler")
   expect_equal(spec$initial_price, 100)
 })
@@ -535,7 +544,7 @@ test_that("merton_spec creates valid specification", {
     jump_sd = 0.2
   )
   expect_s3_class(spec, "merton_spec")
-  expect_s3_class(spec, "process_spec")
+  expect_s3_class(spec, "model_spec")
   expect_equal(spec$jump_intensity, 1.2)
 })
 
