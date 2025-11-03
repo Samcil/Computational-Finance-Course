@@ -35,9 +35,12 @@
 #' )
 #'
 #' @export
-short_rate_spec <- function(model = c("ho_lee", "hull_white"),
+short_rate_spec <- function(model = c("ho_lee", "hull_white", "g2pp"),
                             volatility,
                             mean_reversion = NULL,
+                            second_volatility = NULL,
+                            second_mean_reversion = NULL,
+                            correlation = 0,
                             curve = NULL,
                             initial_rate = NULL,
                             engine = "monte_carlo",
@@ -45,7 +48,12 @@ short_rate_spec <- function(model = c("ho_lee", "hull_white"),
   model <- rlang::arg_match(model)
   checkmate::assert_number(volatility, lower = 0, finite = TRUE)
 
-  if (identical(model, "hull_white")) {
+  if (identical(model, "ho_lee")) {
+    mean_reversion <- 0
+    second_volatility <- 0
+    second_mean_reversion <- 0
+    correlation <- 0
+  } else if (identical(model, "hull_white")) {
     if (is.null(mean_reversion)) {
       rlang::abort("`mean_reversion` must be supplied for the Hull-White model")
     }
@@ -53,8 +61,20 @@ short_rate_spec <- function(model = c("ho_lee", "hull_white"),
     if (mean_reversion <= 0) {
       rlang::abort("`mean_reversion` must be strictly positive for Hull-White")
     }
+    second_volatility <- 0
+    second_mean_reversion <- 0
+    correlation <- 0
   } else {
-    mean_reversion <- 0
+    if (is.null(mean_reversion) || is.null(second_mean_reversion)) {
+      rlang::abort("`mean_reversion` and `second_mean_reversion` must be supplied for the G2++ model")
+    }
+    if (is.null(second_volatility)) {
+      rlang::abort("`second_volatility` must be supplied for the G2++ model")
+    }
+    checkmate::assert_number(mean_reversion, lower = .Machine$double.eps, finite = TRUE)
+    checkmate::assert_number(second_mean_reversion, lower = .Machine$double.eps, finite = TRUE)
+    checkmate::assert_number(second_volatility, lower = 0, finite = TRUE)
+    checkmate::assert_number(correlation, lower = -1, upper = 1, finite = TRUE)
   }
 
   checkmate::assert_list(engine_options, names = "unique", null.ok = FALSE)
@@ -71,18 +91,36 @@ short_rate_spec <- function(model = c("ho_lee", "hull_white"),
     checkmate::assert_number(initial_rate, finite = TRUE)
   }
 
-  theta_raw <- make_theta_function(
-    forward_fun = forward_fun,
-    forward_derivative_fun = forward_derivative_fun,
-    volatility = volatility,
-    mean_reversion = mean_reversion,
-    model = model
-  )
-
   discount_fun_vec <- Vectorize(discount_fun)
   forward_fun_vec <- Vectorize(forward_fun)
   forward_derivative_fun_vec <- Vectorize(forward_derivative_fun)
-  theta_fun_vec <- Vectorize(theta_raw)
+
+  theta_raw <- NULL
+  theta_fun_vec <- NULL
+  phi_fun <- NULL
+  phi_fun_vec <- NULL
+
+  if (identical(model, "g2pp")) {
+    phi_raw <- make_phi_function_g2pp(
+      forward_fun = forward_fun,
+      volatility1 = volatility,
+      volatility2 = second_volatility,
+      mean_reversion1 = mean_reversion,
+      mean_reversion2 = second_mean_reversion,
+      correlation = correlation
+    )
+    phi_fun <- phi_raw
+    phi_fun_vec <- Vectorize(phi_raw)
+  } else {
+    theta_raw <- make_theta_function(
+      forward_fun = forward_fun,
+      forward_derivative_fun = forward_derivative_fun,
+      volatility = volatility,
+      mean_reversion = mean_reversion,
+      model = model
+    )
+    theta_fun_vec <- Vectorize(theta_raw)
+  }
 
   spec <- new_process_spec(
     class = "short_rate_spec",
@@ -90,6 +128,9 @@ short_rate_spec <- function(model = c("ho_lee", "hull_white"),
       model = model,
       volatility = volatility,
       mean_reversion = mean_reversion,
+      second_volatility = second_volatility,
+      second_mean_reversion = second_mean_reversion,
+      correlation = correlation,
       curve = curve_data,
       initial_rate = initial_rate
     ),
@@ -116,7 +157,9 @@ short_rate_spec <- function(model = c("ho_lee", "hull_white"),
     forward_derivative_fun = forward_derivative_fun,
     forward_derivative_fun_vec = forward_derivative_fun_vec,
     theta_fun = theta_raw,
-    theta_fun_vec = theta_fun_vec
+    theta_fun_vec = theta_fun_vec,
+    phi_fun = phi_fun,
+    phi_fun_vec = phi_fun_vec
   )
 
   engine_options <- rlang::list2(!!!engine_options)
@@ -150,6 +193,7 @@ simulate_paths.short_rate_spec <- function(process_spec,
                                            ...) {
   rlang::check_dots_empty()
 
+  args <- process_spec$args
   engine <- process_spec$method$engine
   if (is.null(engine)) {
     engine <- "monte_carlo"
@@ -161,15 +205,27 @@ simulate_paths.short_rate_spec <- function(process_spec,
   }
 
   simulation <- switch(engine,
-    monte_carlo = rlang::exec(
-      simulate_gaussian_short_rate_paths,
-      process_spec = process_spec,
-      n_paths = n_paths,
-      n_steps = n_steps,
-      maturity = maturity,
-      seed = seed,
-      !!!engine_args
-    ),
+    monte_carlo = if (identical(args$model, "g2pp")) {
+      rlang::exec(
+        simulate_g2pp_paths,
+        process_spec = process_spec,
+        n_paths = n_paths,
+        n_steps = n_steps,
+        maturity = maturity,
+        seed = seed,
+        !!!engine_args
+      )
+    } else {
+      rlang::exec(
+        simulate_gaussian_short_rate_paths,
+        process_spec = process_spec,
+        n_paths = n_paths,
+        n_steps = n_steps,
+        maturity = maturity,
+        seed = seed,
+        !!!engine_args
+      )
+    },
     rlang::abort(
       message = paste0("Engine '", engine, "' is not implemented for simulate_paths.short_rate_spec"),
       class = "short_rate_unsupported_engine",
@@ -177,12 +233,22 @@ simulate_paths.short_rate_spec <- function(process_spec,
     )
   )
 
-  tibble::tibble(
+  result_tbl <- tibble::tibble(
     path_id = rep(seq_len(n_paths), each = length(simulation$time)),
     time = rep(simulation$time, times = n_paths),
     short_rate = as.vector(t(simulation$rates)),
     discount_factor = as.vector(t(simulation$discounts))
   )
+
+  if (!is.null(simulation$factor1)) {
+    result_tbl <- result_tbl |>
+      dplyr::mutate(
+        factor_1 = as.vector(t(simulation$factor1)),
+        factor_2 = as.vector(t(simulation$factor2))
+      )
+  }
+
+  result_tbl
 }
 
 
@@ -191,6 +257,7 @@ price_zcb.short_rate_spec <- function(object,
                                       maturities,
                                       valuation_time = 0,
                                       short_rate = NULL,
+                                      factor_state = NULL,
                                       ...) {
   rlang::check_dots_empty()
 
@@ -224,26 +291,53 @@ price_zcb.short_rate_spec <- function(object,
     rlang::abort("`short_rate` must have length 1 or match `maturities`")
   }
 
-  a <- args$mean_reversion
-  sigma <- args$volatility
-  theta_fun <- state$theta_fun
+  if (identical(args$model, "g2pp")) {
+    parsed_factors <- normalize_g2pp_factor_state(factor_state, length(maturities))
 
-  purrr::map2_dbl(
-    maturities,
-    short_rate,
-    function(maturity, rate_t) {
-      if (abs(maturity - valuation_time) < 1e-12) {
-        return(1)
+    purrr::map2_dbl(
+      seq_along(maturities),
+      maturities,
+      function(idx, maturity) {
+        if (abs(maturity - valuation_time) < 1e-12) {
+          return(1)
+        }
+
+        g2pp_discount_point(
+          discount_fun = state$discount_fun_vec,
+          valuation_time = valuation_time,
+          maturity = maturity,
+          x_state = parsed_factors[idx, 1],
+          y_state = parsed_factors[idx, 2],
+          lambda1 = args$mean_reversion,
+          lambda2 = args$second_mean_reversion,
+          eta1 = args$volatility,
+          eta2 = args$second_volatility,
+          rho = args$correlation
+        )
       }
+    )
+  } else {
+    a <- args$mean_reversion
+    sigma <- args$volatility
+    theta_fun <- state$theta_fun
 
-      delta <- maturity - valuation_time
-      b_tT <- b_factor(a, delta)
-      theta_int <- theta_integral(theta_fun, a, valuation_time, maturity)
-      variance_term <- sigma^2 * b_squared_integral(a, valuation_time, maturity)
+    purrr::map2_dbl(
+      maturities,
+      short_rate,
+      function(maturity, rate_t) {
+        if (abs(maturity - valuation_time) < 1e-12) {
+          return(1)
+        }
 
-      exp(-rate_t * b_tT - theta_int + 0.5 * variance_term)
-    }
-  )
+        delta <- maturity - valuation_time
+        b_tT <- b_factor(a, delta)
+        theta_int <- theta_integral(theta_fun, a, valuation_time, maturity)
+        variance_term <- sigma^2 * b_squared_integral(a, valuation_time, maturity)
+
+        exp(-rate_t * b_tT - theta_int + 0.5 * variance_term)
+      }
+    )
+  }
 }
 
 
@@ -388,4 +482,150 @@ short_rate_state <- function(spec) {
     rlang::abort("Short-rate specification has no engine state; construct via short_rate_spec() or set_engine().")
   }
   state
+}
+
+
+make_phi_function_g2pp <- function(forward_fun,
+                                   volatility1,
+                                   volatility2,
+                                   mean_reversion1,
+                                   mean_reversion2,
+                                   correlation) {
+  function(t) {
+    kappa1 <- g2pp_kappa(mean_reversion1, t)
+    kappa2 <- g2pp_kappa(mean_reversion2, t)
+
+    forward_fun(t) +
+      0.5 * volatility1^2 * kappa1^2 +
+      0.5 * volatility2^2 * kappa2^2 +
+      correlation * volatility1 * volatility2 * kappa1 * kappa2
+  }
+}
+
+
+g2pp_kappa <- function(lambda, delta) {
+  if (lambda <= 1e-8) {
+    delta
+  } else {
+    -expm1(-lambda * delta) / lambda
+  }
+}
+
+
+g2pp_V_term <- function(lambda1,
+                         lambda2,
+                         eta1,
+                         eta2,
+                         rho,
+                         lower,
+                         upper) {
+  delta <- upper - lower
+
+  v1 <- if (lambda1 <= 1e-8) {
+    eta1^2 * delta^3 / 3
+  } else {
+    exp1 <- exp(-lambda1 * delta)
+    exp2 <- exp(-2 * lambda1 * delta)
+    eta1^2 / (lambda1^2) * (
+      delta +
+        (2 / lambda1) * exp1 -
+        (exp2 / (2 * lambda1)) -
+        (3 / (2 * lambda1))
+    )
+  }
+
+  v2 <- if (lambda2 <= 1e-8) {
+    eta2^2 * delta^3 / 3
+  } else {
+    exp1 <- exp(-lambda2 * delta)
+    exp2 <- exp(-2 * lambda2 * delta)
+    eta2^2 / (lambda2^2) * (
+      delta +
+        (2 / lambda2) * exp1 -
+        (exp2 / (2 * lambda2)) -
+        (3 / (2 * lambda2))
+    )
+  }
+
+  cross <- function(lambda_a, lambda_b) {
+    if (abs(lambda_a + lambda_b) <= 1e-8) {
+      delta^2 / 2
+    } else {
+      delta +
+        expm1(-lambda_a * delta) / lambda_a +
+        expm1(-lambda_b * delta) / lambda_b -
+        expm1(-(lambda_a + lambda_b) * delta) / (lambda_a + lambda_b)
+    }
+  }
+
+  cross_term <- 2 * rho * eta1 * eta2 / (lambda1 * lambda2) * cross(lambda1, lambda2)
+
+  v1 + v2 + cross_term
+}
+
+
+g2pp_discount_point <- function(discount_fun,
+                                 valuation_time,
+                                 maturity,
+                                 x_state,
+                                 y_state,
+                                 lambda1,
+                                 lambda2,
+                                 eta1,
+                                 eta2,
+                                 rho) {
+  delta <- maturity - valuation_time
+  b1 <- g2pp_kappa(lambda1, delta)
+  b2 <- g2pp_kappa(lambda2, delta)
+
+  v_tT <- g2pp_V_term(lambda1, lambda2, eta1, eta2, rho, valuation_time, maturity)
+  v_0T <- g2pp_V_term(lambda1, lambda2, eta1, eta2, rho, 0, maturity)
+  v_0t <- g2pp_V_term(lambda1, lambda2, eta1, eta2, rho, 0, valuation_time)
+
+  int_phi <- -log(discount_fun(maturity) / discount_fun(valuation_time) * exp(-0.5 * (v_0T - v_0t)))
+
+  exp(-int_phi - b1 * x_state - b2 * y_state + 0.5 * v_tT)
+}
+
+
+normalize_g2pp_factor_state <- function(factor_state, n) {
+  if (is.null(factor_state)) {
+    return(matrix(0, nrow = n, ncol = 2))
+  }
+
+  if (is.data.frame(factor_state)) {
+    factor_state <- as.matrix(factor_state)
+  }
+
+  if (is.list(factor_state) && !is.matrix(factor_state)) {
+    if (all(c("factor1", "factor2") %in% names(factor_state))) {
+      factor_state <- cbind(factor_state$factor1, factor_state$factor2)
+    } else if (all(c("x", "y") %in% names(factor_state))) {
+      factor_state <- cbind(factor_state$x, factor_state$y)
+    } else {
+      rlang::abort("`factor_state` list must contain `factor1`/`factor2` or `x`/`y` components")
+    }
+  }
+
+  if (is.numeric(factor_state) && !is.matrix(factor_state)) {
+    if (length(factor_state) == 2) {
+      factor_state <- matrix(rep(factor_state, times = n), nrow = n, byrow = TRUE)
+    } else if (length(factor_state) == n * 2) {
+      factor_state <- matrix(factor_state, ncol = 2, byrow = TRUE)
+    } else {
+      rlang::abort("Numeric `factor_state` must have length 2 or 2 * length(maturities)")
+    }
+  }
+
+  factor_matrix <- as.matrix(factor_state)
+
+  if (nrow(factor_matrix) == 1L && n > 1L) {
+    factor_matrix <- matrix(rep(factor_matrix, each = n), nrow = n, byrow = TRUE)
+  }
+
+  if (nrow(factor_matrix) != n || ncol(factor_matrix) < 2) {
+    rlang::abort("`factor_state` must provide two factors for each maturity")
+  }
+
+  factor_matrix[, 1:2, drop = FALSE]
 }

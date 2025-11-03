@@ -139,6 +139,15 @@ generate_standardized_normals <- function(n_paths, n_steps) {
 }
 
 
+g2pp_factor_vol <- function(lambda, volatility, dt) {
+  if (lambda <= 1e-8) {
+    volatility * sqrt(dt)
+  } else {
+    volatility * sqrt((1 - exp(-2 * lambda * dt)) / (2 * lambda))
+  }
+}
+
+
 #' Compute Cumulative Paths from Increments
 #'
 #' Efficiently computes cumulative sums along time dimension for multiple paths
@@ -245,5 +254,83 @@ simulate_gaussian_short_rate_paths <- function(process_spec,
     time = times,
     rates = evolved$rates,
     discounts = evolved$discounts
+  )
+}
+
+
+simulate_g2pp_paths <- function(process_spec,
+                                n_paths,
+                                n_steps,
+                                maturity,
+                                seed,
+                                ...) {
+  dt <- maturity / n_steps
+  times <- seq(0, maturity, length.out = n_steps + 1)
+
+  args <- process_spec$args
+  state <- short_rate_state(process_spec)
+
+  lambda1 <- args$mean_reversion
+  lambda2 <- args$second_mean_reversion
+  eta1 <- args$volatility
+  eta2 <- args$second_volatility
+  rho <- args$correlation
+
+  noise <- with_random_seed(seed, {
+    list(
+      z1 = generate_standardized_normals(n_paths, n_steps),
+      z2 = generate_standardized_normals(n_paths, n_steps)
+    )
+  })
+
+  z1 <- noise$z1
+  z2_ind <- noise$z2
+  rho_comp <- sqrt(pmax(0, 1 - rho^2))
+  z2 <- rho * z1 + rho_comp * z2_ind
+
+  decay1 <- exp(-lambda1 * dt)
+  decay2 <- exp(-lambda2 * dt)
+  sigma1 <- g2pp_factor_vol(lambda1, eta1, dt)
+  sigma2 <- g2pp_factor_vol(lambda2, eta2, dt)
+
+  evolve_factor <- function(z_mat, decay, vol_scale) {
+    purrr::accumulate(
+      seq_len(n_steps),
+      .init = rep(0, n_paths),
+      .f = \(prev, step_idx) decay * prev + vol_scale * z_mat[, step_idx]
+    )
+  }
+
+  x_history <- evolve_factor(z1, decay1, sigma1)
+  y_history <- evolve_factor(z2, decay2, sigma2)
+
+  factor1 <- do.call(cbind, x_history)
+  factor2 <- do.call(cbind, y_history)
+
+  phi_vals <- if (!is.null(state$phi_fun_vec)) {
+    state$phi_fun_vec(times)
+  } else {
+    rep(0, length(times))
+  }
+
+  rate_matrix <- factor1 + factor2 + matrix(phi_vals, nrow = n_paths, ncol = n_steps + 1, byrow = TRUE)
+
+  discount_history <- purrr::accumulate(
+    seq_len(n_steps),
+    .init = rep(1, n_paths),
+    .f = \(prev_discount, step_idx) {
+      rate_prev <- rate_matrix[, step_idx]
+      rate_next <- rate_matrix[, step_idx + 1]
+      prev_discount * exp(-0.5 * (rate_prev + rate_next) * dt)
+    }
+  )
+  discount_matrix <- do.call(cbind, discount_history)
+
+  list(
+    time = times,
+    rates = rate_matrix,
+    discounts = discount_matrix,
+    factor1 = factor1,
+    factor2 = factor2
   )
 }

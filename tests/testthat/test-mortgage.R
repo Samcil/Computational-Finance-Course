@@ -156,3 +156,77 @@ test_that("mortgage schedule matches Python annuity output", {
   expect_equal(schedule$principal_component, ref[-1, 4], tolerance = 1e-6)
   expect_equal(schedule$prepayment_component, ref[-1, 3], tolerance = 1e-6)
 })
+
+
+test_that("bullet mortgage schedule matches lecture script output", {
+  principal <- 750000
+  rate_per_period <- 0.04
+  periods <- 20
+  cpr <- 0.02
+
+  schedule <- CompFinanceR::mortgage_bullet_schedule(
+    principal = principal,
+    coupon_rate = rate_per_period,
+    maturity = periods,
+    frequency = 1,
+    prepayment = cpr
+  )
+
+  bullet_reference <- function(rate, notional, periods, cpr_scalar) {
+    M <- matrix(0, nrow = periods + 1, ncol = 6)
+    M[, 1] <- 0:periods
+    M[1, 2] <- notional
+    if (periods >= 2) {
+      for (t in 2:periods) {
+        M[t, 5] <- rate * M[t - 1, 2]
+        M[t, 4] <- 0
+        scheduled_outstanding <- M[t - 1, 2] - M[t, 4]
+        M[t, 3] <- scheduled_outstanding * cpr_scalar
+        M[t, 2] <- scheduled_outstanding - M[t, 3]
+        M[t, 6] <- M[t, 4] + M[t, 3] + M[t, 5]
+      }
+    }
+    M[periods + 1, 5] <- rate * M[periods, 2]
+    M[periods + 1, 4] <- M[periods, 2]
+    M[periods + 1, 6] <- M[periods + 1, 4] + M[periods + 1, 3] + M[periods + 1, 5]
+    M
+  }
+
+  ref <- bullet_reference(rate_per_period, principal, periods, cpr)
+
+  expect_s3_class(schedule, "tbl_df")
+  expect_equal(schedule$outstanding_start, ref[seq_len(periods), 2], tolerance = 1e-6)
+  expect_equal(schedule$outstanding_end, ref[-1, 2], tolerance = 1e-6)
+  expect_equal(schedule$prepayment_component, ref[-1, 3], tolerance = 1e-6)
+  expect_equal(schedule$principal_component, ref[-1, 4], tolerance = 1e-6)
+  expect_equal(schedule$interest_component, ref[-1, 5], tolerance = 1e-6)
+  expect_equal(schedule$payment, ref[-1, 6], tolerance = 1e-6)
+  expect_equal(schedule$outstanding_end[periods], 0, tolerance = 1e-10)
+})
+
+
+test_that("prepayment incentive reproduces logistic lecture curve", {
+  spreads <- seq(-0.05, 0.08, length.out = 25)
+  base <- 0.04
+  amplitude <- 0.1
+  slope <- 115
+  threshold <- 0.02
+
+  incentive <- CompFinanceR::mortgage_prepayment_incentive(
+    rate_spread = spreads,
+    base = base,
+    amplitude = amplitude,
+    slope = slope,
+    threshold = threshold
+  )
+
+  reference <- base + amplitude / (1 + exp(slope * (threshold - spreads)))
+
+  expect_equal(incentive, reference, tolerance = 1e-12, scale = 1)
+  expect_true(all(diff(incentive) >= -1e-12))
+  expect_equal(
+    CompFinanceR::mortgage_prepayment_incentive(threshold, base, amplitude, slope, threshold),
+    base + amplitude / 2,
+    tolerance = 1e-12
+  )
+})

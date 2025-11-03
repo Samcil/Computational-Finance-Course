@@ -5,9 +5,12 @@
 \title{Short-Rate Model Specification}
 \usage{
 short_rate_spec(
-  model = c("ho_lee", "hull_white"),
+  model = c("ho_lee", "hull_white", "g2pp"),
   volatility,
   mean_reversion = NULL,
+  second_volatility = NULL,
+  second_mean_reversion = NULL,
+  correlation = 0,
   curve = NULL,
   initial_rate = NULL,
   engine = "monte_carlo",

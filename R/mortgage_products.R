@@ -177,6 +177,150 @@ mortgage_annuity_schedule <- function(principal,
 }
 
 
+#' Construct a Bullet Mortgage Schedule
+#'
+#' Generate an amortisation schedule for a bullet mortgage where interest is
+#' paid periodically and the outstanding principal is settled at maturity. The
+#' routine mirrors the lecture `BulletMortgage.py` script while reusing the
+#' swap schedule utilities so mortgage and swap analytics operate on consistent
+#' columns.
+#'
+#' @inheritParams mortgage_annuity_schedule
+#'
+#' @return Tibble containing the bullet mortgage schedule with the same column
+#'   set as [mortgage_annuity_schedule()].
+#'
+#' @export
+mortgage_bullet_schedule <- function(principal,
+                                     coupon_rate,
+                                     maturity,
+                                     frequency = 12,
+                                     daycount = NULL,
+                                     prepayment = 0) {
+  checkmate::assert_number(principal, lower = 0, finite = TRUE)
+  checkmate::assert_number(coupon_rate, finite = TRUE)
+  checkmate::assert_number(maturity, lower = 0, finite = TRUE)
+  checkmate::assert_int(frequency, lower = 1)
+  if (!is.null(daycount)) {
+    checkmate::assert_number(daycount, lower = 0, finite = TRUE)
+  }
+  checkmate::assert_numeric(prepayment, any.missing = FALSE, finite = TRUE, lower = 0)
+
+  step <- 1 / frequency
+  periods_raw <- maturity / step
+  if (!checkmate::test_number(periods_raw, lower = 1, finite = TRUE) ||
+    abs(periods_raw - round(periods_raw)) > 1e-8) {
+    rlang::abort("`maturity` must be an integer multiple of `1 / frequency`")
+  }
+  n_periods <- as.integer(round(periods_raw))
+
+  accrual_fraction <- if (is.null(daycount)) {
+    rep(step, n_periods)
+  } else {
+    rep(daycount, n_periods)
+  }
+
+  base_schedule <- swap_cashflow_schedule(
+    start = 0,
+    end = maturity,
+    frequency = frequency,
+    notional = rep(1, n_periods),
+    daycount = accrual_fraction
+  )
+
+  period_rate <- coupon_rate / frequency
+
+  if (length(prepayment) == 1L) {
+    prepayment_vec <- rep(prepayment, n_periods)
+  } else if (length(prepayment) == n_periods) {
+    prepayment_vec <- as.numeric(prepayment)
+  } else if (length(prepayment) == n_periods + 1L) {
+    prepayment_vec <- as.numeric(prepayment[-1])
+  } else {
+    rlang::abort("`prepayment` must be scalar or match the number of periods (or periods + 1)")
+  }
+
+  evolve_period <- function(state, idx) {
+    balance <- state$balance
+    interest_current <- balance * period_rate
+    principal_current <- if (idx == n_periods) balance else 0
+    scheduled_outstanding <- balance - principal_current
+    prepayment_current <- prepayment_vec[[idx]] * scheduled_outstanding
+
+    new_balance <- scheduled_outstanding - prepayment_current
+    if (idx == n_periods && abs(new_balance) > 1e-8) {
+      new_balance <- 0
+    }
+
+    record <- tibble::tibble(
+      outstanding_start = balance,
+      payment = interest_current + principal_current + prepayment_current,
+      interest_component = interest_current,
+      principal_component = principal_current,
+      prepayment_component = prepayment_current,
+      outstanding_end = new_balance
+    )
+
+    list(
+      balance = new_balance,
+      records = append(state$records, list(record))
+    )
+  }
+
+  initial_state <- list(balance = principal, records = list())
+  states <- purrr::accumulate(seq_len(n_periods), evolve_period, .init = initial_state)
+  schedule_details <- purrr::list_rbind(states[[length(states)]]$records)
+
+  base_schedule |>
+    dplyr::mutate(
+      notional = schedule_details$outstanding_start,
+      payment = schedule_details$payment,
+      interest_component = schedule_details$interest_component,
+      principal_component = schedule_details$principal_component,
+      prepayment_component = schedule_details$prepayment_component,
+      outstanding_start = schedule_details$outstanding_start,
+      outstanding_end = schedule_details$outstanding_end,
+      period_rate = rep(period_rate, n_periods),
+      cpr = prepayment_vec
+    )
+}
+
+
+#' Prepayment Incentive Function
+#'
+#' Compute the conditional prepayment rate (CPR) incentive using a smooth
+#' logistic function of the mortgage--swap spread, mirroring the
+#' `PrepaymentFunction.py` lecture script. The curve shifts smoothly between the
+#' baseline CPR and a higher incentive level as the spread crosses the chosen
+#' threshold.
+#'
+#' @param rate_spread Numeric vector of mortgage--swap spreads expressed in
+#'   decimal form.
+#' @param base Baseline CPR (decimal) when the spread is far below the
+#'   threshold.
+#' @param amplitude Maximum uplift above the baseline CPR as the spread widens.
+#' @param slope Steepness of the logistic transition.
+#' @param threshold Spread level where the incentive is halfway between `base`
+#'   and `base + amplitude`.
+#'
+#' @return Numeric vector with the incentive CPR values.
+#'
+#' @export
+mortgage_prepayment_incentive <- function(rate_spread,
+                                          base = 0.04,
+                                          amplitude = 0.1,
+                                          slope = 115,
+                                          threshold = 0.02) {
+  checkmate::assert_numeric(rate_spread, any.missing = FALSE, finite = TRUE)
+  checkmate::assert_number(base, lower = 0)
+  checkmate::assert_number(amplitude, lower = 0)
+  checkmate::assert_number(slope, finite = TRUE)
+  checkmate::assert_number(threshold, finite = TRUE)
+
+  base + amplitude / (1 + exp(slope * (threshold - rate_spread)))
+}
+
+
 #' Mortgage Annuity Specification
 #'
 #' Create a specification wrapping the annuity mortgage schedule so that pricing

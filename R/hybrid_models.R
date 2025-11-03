@@ -469,7 +469,7 @@ szhw_spec <- function(spot,
     spec,
     model_variant = "szhw_hull_white",
     state_variables = c("equity_price", "short_rate", "volatility"),
-    engines = list(price = "cos")
+    engines = list(price = "cos", simulate = "monte_carlo")
   )
 
   spec$method$engine_state <- list(
@@ -490,6 +490,150 @@ szhw_spec <- function(spot,
   )
 
   spec
+}
+
+#' @export
+simulate_paths.szhw_spec <- function(process_spec,
+                                     n_paths,
+                                     n_steps,
+                                     maturity,
+                                     seed = sample.int(.Machine$integer.max, 1),
+                                     ...) {
+  checkmate::assert_class(process_spec, "szhw_spec")
+  checkmate::assert_int(n_paths, lower = 1)
+  checkmate::assert_int(n_steps, lower = 1)
+  checkmate::assert_number(maturity, lower = 0)
+  checkmate::assert_int(seed, lower = 0)
+
+  if (maturity == 0) {
+    return(tibble::tibble(
+      path_id = seq_len(n_paths),
+      time = 0,
+      spot = rep(process_spec$spot, n_paths),
+      short_rate = rep(process_spec$short_rate$args$initial_rate, n_paths),
+      volatility = rep(process_spec$initial_volatility, n_paths),
+      money_market = rep(1, n_paths),
+      discount_factor = rep(1, n_paths)
+    ))
+  }
+
+  state <- process_spec$method$engine_state
+  dt <- maturity / n_steps
+  sqrt_dt <- sqrt(dt)
+  time_grid <- seq(0, maturity, length.out = n_steps + 1)
+
+  lambda <- state$mean_reversion
+  eta <- state$short_rate_vol
+  theta_fun <- state$theta_fun
+
+  kappa <- state$ou$mean_reversion
+  sigma_bar <- state$ou$long_term
+  gamma <- state$ou$volatility
+
+  rho_xsigma <- state$correlation_eq_vol
+  rho_rsigma <- state$correlation_rate_vol
+  rho_xr <- state$correlation_eq_rate
+
+  corr_matrix <- matrix(
+    c(
+      1, rho_xsigma, rho_xr,
+      rho_xsigma, 1, rho_rsigma,
+      rho_xr, rho_rsigma, 1
+    ),
+    nrow = 3,
+    byrow = TRUE
+  )
+  if (any(abs(eigen(corr_matrix, symmetric = TRUE, only.values = TRUE)$values) < 1e-10)) {
+    rlang::abort("Correlation matrix must be positive definite")
+  }
+  chol_factor <- chol(corr_matrix)
+
+  random_terms <- with_random_seed(
+    seed,
+    list(
+      x = generate_standardized_normals(n_paths, n_steps),
+      sigma = generate_standardized_normals(n_paths, n_steps),
+      r = generate_standardized_normals(n_paths, n_steps)
+    )
+  )
+
+  correlated_steps <- purrr::map(
+    seq_len(n_steps),
+    function(step_idx) {
+      base_step <- cbind(
+        random_terms$x[, step_idx],
+        random_terms$sigma[, step_idx],
+        random_terms$r[, step_idx]
+      )
+      base_step %*% t(chol_factor)
+    }
+  )
+
+  initial_state <- list(
+    log_spot = rep(log(process_spec$spot), n_paths),
+    sigma = rep(state$ou$initial, n_paths),
+    rate = rep(state$initial_rate, n_paths),
+    money_market = rep(1, n_paths)
+  )
+
+  path_states <- purrr::accumulate(
+    seq_len(n_steps),
+    function(prev, step_idx) {
+      increments <- correlated_steps[[step_idx]]
+      dWx <- sqrt_dt * increments[, 1]
+      dWsigma <- sqrt_dt * increments[, 2]
+      dWr <- sqrt_dt * increments[, 3]
+
+      sigma_prev <- prev$sigma
+      rate_prev <- prev$rate
+      log_prev <- prev$log_spot
+      mm_prev <- prev$money_market
+      t_prev <- time_grid[step_idx]
+
+      sigma_next <- sigma_prev + kappa * (sigma_bar - sigma_prev) * dt + gamma * dWsigma
+
+      theta_t <- theta_fun(t_prev)
+      rate_next <- rate_prev + lambda * (theta_t - rate_prev) * dt + eta * dWr
+
+      money_market_next <- mm_prev * exp(0.5 * (rate_prev + rate_next) * dt)
+
+      log_next_raw <- log_prev + (rate_prev - 0.5 * sigma_prev^2) * dt + sigma_prev * dWx
+      adjustment <- process_spec$spot / mean(exp(log_next_raw) / money_market_next)
+      log_next <- log_next_raw + log(adjustment)
+
+      list(
+        log_spot = log_next,
+        sigma = sigma_next,
+        rate = rate_next,
+        money_market = money_market_next
+      )
+    },
+    .init = initial_state
+  )
+
+  log_spot_paths <- do.call(cbind, purrr::map(path_states, "log_spot"))
+  sigma_paths <- do.call(cbind, purrr::map(path_states, "sigma"))
+  rate_paths <- do.call(cbind, purrr::map(path_states, "rate"))
+  money_market_paths <- do.call(cbind, purrr::map(path_states, "money_market"))
+
+  discount_paths <- purrr::accumulate(
+    seq_len(n_steps),
+    function(prev, step_idx) {
+      prev * exp(-0.5 * (rate_paths[, step_idx] + rate_paths[, step_idx + 1]) * dt)
+    },
+    .init = rep(1, n_paths)
+  )
+  discount_paths <- do.call(cbind, discount_paths)
+
+  tibble::tibble(
+    path_id = rep(seq_len(n_paths), each = length(time_grid)),
+    time = rep(time_grid, times = n_paths),
+    spot = as.vector(t(exp(log_spot_paths))),
+    short_rate = as.vector(t(rate_paths)),
+    volatility = as.vector(t(sigma_paths)),
+    money_market = as.vector(t(money_market_paths)),
+    discount_factor = as.vector(t(discount_paths))
+  )
 }
 
 #' @export
@@ -639,6 +783,76 @@ price_szhw_option_cos <- function(process_spec,
     strike = strikes,
     call_price = call_prices$price,
     put_price = put_prices$price
+  )
+}
+
+#' SZHW Diversification Value via Monte Carlo
+#'
+#' Replicates the diversification payoff from the `SZHW_Diversification.py`
+#' lecture by simulating correlated stock, volatility, and short-rate paths
+#' under the Schoebel-Zhu Hull-White dynamics and discounting the terminal
+#' payoff back to today.
+#'
+#' @param process_spec An object created by [szhw_spec()].
+#' @param omega Numeric vector of diversification weights between the equity
+#'   and bond legs.
+#' @param maturity Option maturity.
+#' @param settlement Forward start settlement date used for the bond leg.
+#' @param n_paths Number of Monte Carlo paths.
+#' @param n_steps Number of time steps for the Euler scheme.
+#' @param seed Random seed for reproducibility. Defaults to a random draw.
+#'
+#' @return Tibble with `omega` and the present value of the diversification
+#'   payoff.
+#'
+#' @export
+szhw_diversification_value <- function(process_spec,
+                                       omega,
+                                       maturity,
+                                       settlement,
+                                       n_paths = 5000L,
+                                       n_steps = 360L,
+                                       seed = sample.int(.Machine$integer.max, 1)) {
+  checkmate::assert_class(process_spec, "szhw_spec")
+  checkmate::assert_numeric(omega, any.missing = FALSE, finite = TRUE)
+  checkmate::assert_number(maturity, lower = 0)
+  checkmate::assert_number(settlement, lower = maturity)
+  checkmate::assert_int(n_paths, lower = 1)
+  checkmate::assert_int(n_steps, lower = 1)
+  checkmate::assert_int(seed, lower = 0)
+
+  mc_paths <- simulate_paths(
+    process_spec = process_spec,
+    n_paths = n_paths,
+    n_steps = n_steps,
+    maturity = maturity,
+    seed = seed
+  )
+
+  terminal_slice <- mc_paths |>
+    dplyr::filter(abs(time - maturity) < 1e-10)
+
+  short_rate_spec <- process_spec$args$short_rate
+  short_rate_state <- short_rate_state(short_rate_spec)
+  discount_settlement <- short_rate_state$discount_fun(settlement)
+
+  zero_coupon_T_T1 <- price_zcb(
+    object = short_rate_spec,
+    maturities = rep(settlement, nrow(terminal_slice)),
+    valuation_time = maturity,
+    short_rate = terminal_slice$short_rate
+  )
+
+  payoff_component <- function(weight) {
+    bond_leg <- zero_coupon_T_T1 / discount_settlement
+    equity_leg <- terminal_slice$spot / process_spec$spot
+    payoff <- weight * equity_leg + (1 - weight) * bond_leg
+    mean(pmax(payoff, 0) / terminal_slice$money_market)
+  }
+
+  tibble::tibble(
+    omega = omega,
+    present_value = vapply(omega, payoff_component, numeric(1))
   )
 }
 

@@ -108,13 +108,17 @@ compute_swap_exposure_path <- function(path_tbl,
   times <- path_tbl$time
   rates <- path_tbl$short_rate
   discount <- path_tbl$discount_factor
+  factor1 <- if ("factor_1" %in% names(path_tbl)) path_tbl[["factor_1"]] else NULL
+  factor2 <- if ("factor_2" %in% names(path_tbl)) path_tbl[["factor_2"]] else NULL
   values <- compute_swap_values(
     spec = spec,
     schedule = schedule,
     fixed_rate = fixed_rate,
     type = type,
     times = times,
-    rates = rates
+    rates = rates,
+    factor1 = factor1,
+    factor2 = factor2
   )
 
   positive <- pmax(values, 0)
@@ -135,6 +139,8 @@ compute_swap_values <- function(spec,
                                 type,
                                 times,
                                 rates,
+                                factor1 = NULL,
+                                factor2 = NULL,
                                 tol = 1e-10) {
   pay_times <- schedule[["pay_time"]]
   start_times <- schedule[["start"]]
@@ -142,7 +148,7 @@ compute_swap_values <- function(spec,
   accruals <- schedule[["accrual_fraction"]]
   notionals <- schedule[["notional"]]
 
-  evaluate_swap_value <- function(t_val, r_val) {
+  evaluate_swap_value <- function(t_val, r_val, idx_eval) {
     future_idx <- pay_times > t_val + tol
     if (!any(future_idx)) {
       return(0)
@@ -151,21 +157,34 @@ compute_swap_values <- function(spec,
     future_count <- sum(future_idx)
     rate_vec <- rep(r_val, future_count)
 
+    factor_block <- NULL
+    if (!is.null(factor1) && !is.null(factor2)) {
+      current_factors <- c(factor1[[idx_eval]], factor2[[idx_eval]])
+      factor_block <- matrix(rep(current_factors, future_count), nrow = future_count, byrow = TRUE)
+    }
+
     end_df <- price_zcb(
       spec,
       maturities = end_times[future_idx],
       valuation_time = t_val,
-      short_rate = rate_vec
+      short_rate = rate_vec,
+      factor_state = factor_block
     )
 
     start_df <- rep(1, future_count)
     future_start_idx <- start_times[future_idx] > t_val + tol
     if (any(future_start_idx)) {
+      factor_subset <- if (is.null(factor_block)) {
+        NULL
+      } else {
+        factor_block[future_start_idx, , drop = FALSE]
+      }
       start_df[future_start_idx] <- price_zcb(
         spec,
         maturities = start_times[future_idx][future_start_idx],
         valuation_time = t_val,
-        short_rate = rep(r_val, sum(future_start_idx))
+        short_rate = rep(r_val, sum(future_start_idx)),
+        factor_state = factor_subset
       )
     }
 
@@ -182,7 +201,9 @@ compute_swap_values <- function(spec,
     }
   }
 
-  purrr::map2_dbl(times, rates, evaluate_swap_value)
+  purrr::map_dbl(seq_along(times), function(idx_eval) {
+    evaluate_swap_value(times[[idx_eval]], rates[[idx_eval]], idx_eval)
+  })
 }
 
 
