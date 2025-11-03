@@ -19,7 +19,7 @@ cos_coefficients(option_type, a, b, k)
 Numeric vector of coefficients.
 }
 \description{
-Internal helper computing payoff-dependent cosine coefficients for call and
-put options.
+Compute payoff-dependent cosine coefficients for call and put options under
+the COS pricing framework. These coefficients are reused across forward
+start and vanilla option routines.
 }
-\keyword{internal}

@@ -83,6 +83,85 @@ cos_call_put_price <- function(cf,
   )
 }
 
+#' COS Pricing with Stochastic Short Rates
+#'
+#' Applies the COS expansion to models in which interest rates are stochastic
+#' and discounted via an externally supplied zero-coupon bond price. Mirrors
+#' the lecture implementations used for Black-Scholes-Hull-White and related
+#' hybrids where characteristic functions are defined under the terminal
+#' measure.
+#'
+#' @inheritParams cos_call_put_price
+#' @param discount_factor Numeric scalar or vector giving the discount factor
+#'   \eqn{P(0, T)} for each maturity in `maturity`. Must either have length 1 or
+#'   match the length of `strikes` when multiple maturities are priced.
+#'
+#' @return Tibble with columns `strike` and `price` containing COS prices.
+#' @export
+cos_call_put_price_stoch_ir <- function(cf,
+                                        option_type = c("call", "put"),
+                                        spot,
+                                        maturity,
+                                        strikes,
+                                        discount_factor,
+                                        n_terms = 256L,
+                                        truncation = 8,
+                                        lower_bound = NULL,
+                                        upper_bound = NULL) {
+  option_type <- rlang::arg_match(option_type)
+  checkmate::assert_function(cf)
+  checkmate::assert_number(spot, lower = .Machine$double.eps, finite = TRUE)
+  checkmate::assert_number(maturity, lower = 0, finite = TRUE)
+  checkmate::assert_numeric(strikes, lower = .Machine$double.eps, any.missing = FALSE, finite = TRUE)
+  checkmate::assert_numeric(discount_factor, lower = 0, any.missing = FALSE, finite = TRUE)
+  checkmate::assert_integerish(n_terms, lower = 1, len = 1)
+
+  if (length(discount_factor) == 1L) {
+    discount_factor <- rep(discount_factor, length(strikes))
+  } else if (length(discount_factor) != length(strikes)) {
+    rlang::abort("`discount_factor` must have length 1 or match `strikes`.")
+  }
+
+  if (is.null(lower_bound) && is.null(upper_bound)) {
+    checkmate::assert_number(truncation, lower = 0, finite = TRUE)
+    a <- -truncation * sqrt(maturity)
+    b <- truncation * sqrt(maturity)
+  } else {
+    checkmate::assert_number(lower_bound, finite = TRUE)
+    checkmate::assert_number(upper_bound, finite = TRUE)
+    if (lower_bound >= upper_bound) {
+      rlang::abort("lower_bound must be strictly less than upper_bound")
+    }
+    a <- lower_bound
+    b <- upper_bound
+  }
+
+  n_terms <- as.integer(n_terms)
+  strikes <- as.numeric(strikes)
+  k <- seq_len(n_terms) - 1
+  u <- k * pi / (b - a)
+
+  put_coefficients <- cos_coefficients("put", a, b, k)
+  characteristic_values <- cf(u)
+  characteristic_values[1] <- characteristic_values[1] * 0.5
+  weights <- put_coefficients * characteristic_values
+
+  log_moneyness <- log(spot / strikes)
+  exponential_matrix <- exp(1i * outer(log_moneyness - a, u))
+  undiscounted <- strikes * Re(exponential_matrix %*% weights)
+
+  if (option_type == "call") {
+    prices <- undiscounted + spot - strikes * discount_factor
+  } else {
+    prices <- undiscounted
+  }
+
+  tibble::tibble(
+    strike = strikes,
+    price = as.numeric(prices)
+  )
+}
+
 #' Recover Probability Densities via COS Expansion
 #'
 #' Applies the COS method to reconstruct the probability density function of a
@@ -156,8 +235,9 @@ cos_density_recovery <- function(cf,
 
 #' COS Method Coefficients for Payoff Functions
 #'
-#' Internal helper computing payoff-dependent cosine coefficients for call and
-#' put options.
+#' Compute payoff-dependent cosine coefficients for call and put options under
+#' the COS pricing framework. These coefficients are reused across forward
+#' start and vanilla option routines.
 #'
 #' @param option_type Character string, one of "call" or "put".
 #' @param a Numeric scalar. Lower truncation bound.
@@ -165,7 +245,7 @@ cos_density_recovery <- function(cf,
 #' @param k Integer vector of cosine indices.
 #'
 #' @return Numeric vector of coefficients.
-#' @keywords internal
+#' @export
 cos_coefficients <- function(option_type, a, b, k) {
   option_type <- rlang::arg_match(option_type, c("call", "put"))
   width <- b - a

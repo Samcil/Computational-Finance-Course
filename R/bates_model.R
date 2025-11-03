@@ -73,8 +73,9 @@ bates_spec <- function(initial_price,
     cli::cli_alert_info("Variance process may hit zero; Euler simulation reflects at zero, AES sampling remains non-negative")
   }
 
-  structure(
-    list(
+  spec <- new_stochastic_vol_spec(
+    class = "bates_spec",
+    args = list(
       initial_price = initial_price,
       initial_variance = initial_variance,
       risk_free_rate = risk_free_rate,
@@ -88,7 +89,18 @@ bates_spec <- function(initial_price,
       jump_sd = jump_sd,
       scheme = scheme
     ),
-    class = c("bates_spec", "process_spec")
+    process_type = "bates",
+    inheritance = "jump_diffusion_spec"
+  )
+
+  set_process_metadata(
+    spec,
+    variance_process = "cir",
+    default_scheme = scheme,
+    engines = list(
+      simulate = c("aes", "euler"),
+      price = "cos"
+    )
   )
 }
 
@@ -423,8 +435,9 @@ bates_characteristic_function <- function(process_spec,
   }
 
   function(u) {
-    u <- as.complex(u)
-    base_cf(u) * exp(lambda * maturity * (exp(1i * u * jump_mean - 0.5 * jump_sd^2 * u^2) - 1))
+    checkmate::assert_numeric(u, any.missing = FALSE)
+    jump_term <- exp(1i * u * jump_mean - 0.5 * jump_sd^2 * u^2)
+    base_cf(u) * exp(lambda * maturity * (jump_term - 1))
   }
 }
 
@@ -476,91 +489,22 @@ bates_implied_volatility <- function(process_spec,
     n_terms = n_terms,
     truncation = truncation
   )
-
-  bs_forward_factor <- exp(-process_spec$dividend_yield * maturity)
-  bs_discount_factor <- exp(-process_spec$risk_free_rate * maturity)
-  intrinsic_lower <- if (option_type == "call") {
-    pmax(process_spec$initial_price * bs_forward_factor - strikes * bs_discount_factor, 0)
-  } else {
-    pmax(strikes * bs_discount_factor - process_spec$initial_price * bs_forward_factor, 0)
-  }
-  upper_bound <- if (option_type == "call") {
-    process_spec$initial_price * bs_forward_factor
-  } else {
-    strikes * bs_discount_factor
-  }
-
-  implied_vols <- purrr::map2_dbl(
-    cos_prices$price,
-    seq_along(strikes),
-    \(target_price, idx) {
-      strike <- strikes[idx]
-      lower_price <- intrinsic_lower[idx]
-      upper_price <- upper_bound[idx]
-      if (target_price < lower_price - 1e-8 || target_price > upper_price + 1e-8) {
-        return(NA_real_)
-      }
-
-      bs_spec <- black_scholes_spec(
-        option_type = option_type,
-        strike = strike,
-        maturity = maturity,
-        risk_free_rate = process_spec$risk_free_rate,
-        dividend_yield = process_spec$dividend_yield
-      )
-
-      pricing_difference <- function(vol) {
-        price_options(bs_spec, spot = process_spec$initial_price, volatility = vol)$price - target_price
-      }
-
-      lower <- vol_interval[1]
-      upper <- vol_interval[2]
-      f_lower <- pricing_difference(lower)
-      f_upper <- pricing_difference(upper)
-
-      if (abs(f_lower) < tol) {
-        return(lower)
-      }
-      if (abs(f_upper) < tol) {
-        return(upper)
-      }
-
-      if (f_lower * f_upper > 0) {
-        expansion <- c(2, 5, 10)
-        expansion_results <- purrr::map(
-          expansion,
-          \(mult) {
-            candidate <- vol_interval[2] * mult
-            f_candidate <- pricing_difference(candidate)
-            tibble::tibble(
-              candidate = candidate,
-              f_candidate = f_candidate,
-              should_update = f_lower * f_candidate <= 0
-            )
-          }
-        ) |> purrr::list_rbind()
-
-        valid_candidate <- expansion_results |>
-          dplyr::filter(should_update) |>
-          dplyr::slice_head(n = 1)
-
-        if (nrow(valid_candidate) > 0) {
-          upper <- valid_candidate$candidate
-          f_upper <- valid_candidate$f_candidate
-        }
-      }
-
-      if (f_lower * f_upper > 0) {
-        return(NA_real_)
-      }
-
-      stats::uniroot(pricing_difference, lower = lower, upper = upper, tol = tol, maxiter = max_iter)$root
-    }
+  implied_tbl <- compute_implied_volatility(
+    option_data = cos_prices,
+    option_type = option_type,
+    spot = process_spec$initial_price,
+    maturity = maturity,
+    risk_free_rate = process_spec$risk_free_rate,
+    dividend_yield = process_spec$dividend_yield,
+    lower = vol_interval[1],
+    upper = vol_interval[2],
+    tol = tol,
+    max_iter = max_iter
   )
 
   tibble::tibble(
-    strike = strikes,
-    option_price = cos_prices$price,
-    implied_volatility = implied_vols
+    strike = implied_tbl$strike,
+    option_price = implied_tbl$price,
+    implied_volatility = implied_tbl$implied_volatility
   )
 }
