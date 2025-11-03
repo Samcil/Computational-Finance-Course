@@ -156,8 +156,9 @@ build_term_structure_output <- function(curve, tenor, discount, quote_reference)
 
   quote_lookup <- quote_reference |>
     dplyr::arrange(.data$curve, .data$tenor) |>
-    dplyr::distinct(.data$curve, .data$tenor, .keep_all = TRUE) |>
-    dplyr::select(.data$curve, .data$tenor, input_quote = .data$quote)
+    dplyr::distinct(dplyr::across(dplyr::all_of(c("curve", "tenor"))), .keep_all = TRUE) |>
+    dplyr::select(dplyr::all_of(c("curve", "tenor", "quote"))) |>
+    dplyr::rename(input_quote = quote)
 
   key_lookup <- paste(quote_lookup$curve, tenor_key(quote_lookup$tenor))
   keys <- paste(curve, tenor_key(tenor))

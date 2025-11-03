@@ -70,13 +70,13 @@ term_structure_discount_function <- function(fit,
   }
 
   curve_slice <- curve_slice |>
-    dplyr::select(.data$tenor, .data$discount_factor) |>
+    dplyr::select(dplyr::all_of(c("tenor", "discount_factor"))) |>
     dplyr::mutate(
       tenor = as.numeric(.data$tenor),
       discount_factor = as.numeric(.data$discount_factor)
     ) |>
     dplyr::arrange(.data$tenor) |>
-    dplyr::distinct(.data$tenor, .keep_all = TRUE)
+    dplyr::distinct(dplyr::across(dplyr::all_of("tenor")), .keep_all = TRUE)
 
   if (!any(abs(curve_slice$tenor) < 1e-12)) {
     curve_slice <- dplyr::bind_rows(

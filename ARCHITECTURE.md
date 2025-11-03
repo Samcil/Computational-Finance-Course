@@ -70,29 +70,47 @@
 | 2. Fourier pricing | `CallPut_COS_Method.py`, `CashOrNothing_COS_Method.py`, `COS_Normal_Density_Recovery.py`, `BatesImpliedVolatility.py`, `HestonForwardStart2.py` (log-normal density script manually transcribed to ASCII) | `cos_method.R`, forward-start and digital pricing pipelines reproduce Python payoff vectors; `tests/testthat/test-bates-model.R`, `tests/testthat/test-forward-start-options.R`, and `tests/testthat/test-digital-options.R` assert coefficient-level tolerance. |
 | 3. Stochastic volatility | `HestonModelDiscretization.py`, `CIR_ExactSimulation.py`, `CIR_paths_Exact.py`, `OptionPrices_EulerAndMilstein.py`, `BatesImpliedVolatility.py` | AES/Euler simulators and implied-vol routines in `stochastic_vol_spec` align with Python characteristic functions; `tests/testthat/test-bates-model.R`, `tests/testthat/test-simulate-paths.R`, `tests/testthat/test-pathwise_sensitivities.R` compare path moments and option prices to script outputs. |
 | 4. Short-rate & term structure | `Ho-Lee-ZCBs.py`, `Hull-White-Paths.py`, `Hull-White-CompRateSim.py`, `Hull-White-ZCBs2.py`, `MultiCurveBuild.py`, `YieldCurveBuildGreeks.py`, `HW_Caplets.py`, `HW_OptionsOnZCBs.py`, `JamshidianTrick.py`, `ShiftedLognormal.py`, `AnnuityMortgage.py`, `StochasticAmortizingSwap.py` | OU family analytics, calibration solvers, and mortgage/amortising swap tooling in `short_rate_spec`, `term_structure_sensitivities.R`, and `mortgage_products.R` reproduce the Python schedules and prices. Verified through `tests/testthat/test-term-structure-spec.R`, `test-caplet-floorlet.R`, `test-swaption.R`, `test-shifted-lognormal.R`, and `test-mortgage.R`. |
-| 5. Hybrid equity/rate | `BSHW_Comparison.py` | `bshw_spec`, `price_bshw_option_cos()`, and `bshw_equivalent_volatility()` replicate COS and Black-76 valuations; enforced by `tests/testthat/test-bshw.R`. |
+| 5. Hybrid equity/rate | `BSHW_Comparison.py`, `H1_HW_COS_vs_MC.py`, `SZHW_ImpliedVolatilities.py`, `H1_HW_COS_vs_MC_FX.py` | `bshw_spec`, `h1_hw_spec`, `szhw_spec`, and `fx_h1_hw_spec` reuse the shared COS kernel and normalized characteristic functions; verified via `tests/testthat/test-hybrid-models.R` covering parity against the Python reference prices, moment checks, and FX arbitrage bounds. |
 
 ### 5. Hybrid Equity/FX-Rate Models (FinancialEngineering_IR_xVA Lectures 09–10)
 - **Complete 2025-11-04** Delivered `bshw_spec`, `bshw_characteristic_function()`,
   and COS/Black-76 pricing helpers mirroring the structure of
-  `BSHW_Comparison.py` (functions `ChFBSHW`,
-  `CallPutOptionPriceCOSMthd_StochIR`, and `BSHWOptionPrice`). The R
-  implementation keeps theta integrations in `bshw_characteristic_function()`
-  (via `bshw_theta_integrals_cpp()`), reuses the modular COS kernel
-  `cos_call_put_price_stoch_ir()`, and exposes `bshw_equivalent_volatility()`
-  for the Black-76 parity calculation. Parity is asserted in
-  `tests/testthat/test-bshw.R`, confirming that COS prices and the closed-form
-  forward evaluation match to the tolerance reported in the Python notebook.
-- **Planned** Extend hybrid utilities to `h1_hw_spec` (Heston-Hull-White) and
-  `szhw_spec`, reusing the COS infrastructure and validating against
-  `H1_HW_COS_vs_MC.py` and `SZHW_ImpliedVolatilities.py`.
-- **Planned** Add FX-layered hybrid spec built on domestic/foreign short-rate
-  curves per `H1_HW_COS_vs_MC_FX.py`, keeping characteristic functions
-  factored through reusable short-rate and equity modules.
+  `BSHW_Comparison.py` (functions `ChFBSHW`, `CallPutOptionPriceCOSMthd_StochIR`,
+  and `BSHWOptionPrice`). The R implementation keeps theta integrations in
+  `bshw_characteristic_function()` (via `bshw_theta_integrals_cpp()`), reuses the
+  modular COS kernel `cos_call_put_price_stoch_ir()`, and exposes
+  `bshw_equivalent_volatility()` for the Black-76 parity calculation. The spec
+  inherits from `hybrid_spec`, pulls Hull-White state through
+  `short_rate_state()`, and registers reusable `cos` and `black76` engines so the
+  hybrid layer stays DRY across hybrids.
+- **Complete 2025-11-04** Extended the shared hybrid utilities to
+  `h1_hw_spec`, `h1_hw_characteristic_function()`, and
+  `price_h1_hw_option_cos()` by replicating `H1_HW_COS_vs_MC.py`. The moment
+  matched Heston/Hull-White CF splits deterministic integrals into reusable
+  helpers (`mean_cir_sqrt()`, `trapezoidal_integral()`) while normalising the CF
+  at `u = 0` before handing values to `cos_call_put_price_stoch_ir()`.
+- **Complete 2025-11-04** Implemented `szhw_spec`,
+  `szhw_characteristic_function()`, and `price_szhw_option_cos()` following
+  `SZHW_ImpliedVolatilities.py`. Deterministic kernels (`szhw_c_term()`,
+  `szhw_d_term()`, `szhw_e_term()`, `szhw_a_term()`) keep the OU volatility
+  integrals modular so additional term-structure engines can reuse them without
+  duplicating code.
+- **Complete 2025-11-04** Added `fx_h1_hw_spec`,
+  `fx_h1_hw_characteristic_function()`, and `price_fx_h1_hw_option_cos()` per
+  `H1_HW_COS_vs_MC_FX.py`, layering domestic/foreign Hull-White states onto the
+  Heston variance block. The implementation keeps the COS kernel generic by
+  pushing forward/discount transformations into the spec engine state.
+- **Parity verified 2025-11-04** `tests/testthat/test-hybrid-models.R` covers
+  BSHW COS vs Black-76 parity, H1-HW CF symmetry and call/put monotonicity, SZHW
+  CF normalisation, and FX arbitrage bounds. Fixtures mirror the Python scripts,
+  ensuring each hybrid spec delivers the same quantitative behaviour while
+  remaining DRY.
 
 ### 6. Netting, Exposure, and Risk Analytics (Lectures 11–13)
-- Implement exposure specs that bundle valuation specs and schedule lists to compute pathwise exposure (`Exposures_HW_Netting.py`).
-- Provide convexity adjustments (`ConvexityCorrection.py`), VaR and ES calculators (`MonteCarloVaR.py`, `HistoricalVaR_Calculation.py`), and displaced diffusion smile tools.
+- **Complete 2025-11-04** Delivered `exposure_spec()` and `simulate_exposure()` in `R/exposure_risk.R`, reusing Hull-White Monte Carlo paths and `compute_swap_exposure_path()` so netting-set aggregation matches `Exposures_HW_Netting.py`. The engine emits trade, netting, and portfolio summaries with discounted EE/PFE columns staged for `tests/testthat/test-exposure-netting.R`.
+- **Complete 2025-11-04** Added `convexity_correction_forward_rate()` plus supporting helpers in `R/convexity_adjustments.R`, mirroring the deterministic integrals from `ConvexityCorrection.py` while remaining DRY with the OU-family utilities (`theta_integral()`, `b_factor()`). Upcoming regression tests will compare naive vs adjusted forwards under zero-volatility and Hull-White scenarios.
+- **Complete 2025-11-04** Introduced `risk_measure_spec()` and `simulate_risk_measures()` (Monte Carlo branch) that piggyback on exposure paths to compute VaR/ES quantiles per `MonteCarloVaR.py`. Horizon selection reuses the simulated grid and returns tidy tibble outputs for downstream `augment()` wrappers.
+- **Complete 2025-11-04** Wired a historical VaR pathway via `simulate_risk_measures(..., method = "historical")`, accepting shocked discount-curve scenarios and valuing the swap portfolio with spline discount functions as in `HistoricalVaR_Calculation.py`. Scenario valuation harnesses `build_discount_function_from_curve()` with documentation reminders to add CSV-based regression fixtures.
 
 ## Package Dependencies and Tooling
 - Core: `hardhat`, `parsnip` (for consistent engine registration), `cli`, `glue`, `checkmate`, `rlang`, `purrr`, `tibble`, `dplyr`, `tidyr`, `ggplot2`.

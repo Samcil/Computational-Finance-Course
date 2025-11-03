@@ -2,22 +2,22 @@
 # Generator token: 10BE3573-1514-4C36-9D1C-5A225CD40393
 
 bshw_theta_integrals_cpp <- function(u, lambda, theta, exp_neg, step_size) {
-    .Call(`_CompFinanceR_bshw_theta_integrals_cpp`, u, lambda, theta, exp_neg, step_size)
+    .Call('_CompFinanceR_bshw_theta_integrals_cpp', PACKAGE = 'CompFinanceR', u, lambda, theta, exp_neg, step_size)
 }
 
 gaussian_short_rate_paths_cpp <- function(shocks, theta, initial_rate, mean_reversion, dt) {
-    .Call(`_CompFinanceR_gaussian_short_rate_paths_cpp`, shocks, theta, initial_rate, mean_reversion, dt)
+    .Call('_CompFinanceR_gaussian_short_rate_paths_cpp', PACKAGE = 'CompFinanceR', shocks, theta, initial_rate, mean_reversion, dt)
 }
 
 gaussian_measure_switch_cpp <- function(shocks, theta, initial_rate, mean_reversion, volatility, dt, lambda) {
-    .Call(`_CompFinanceR_gaussian_measure_switch_cpp`, shocks, theta, initial_rate, mean_reversion, volatility, dt, lambda)
+    .Call('_CompFinanceR_gaussian_measure_switch_cpp', PACKAGE = 'CompFinanceR', shocks, theta, initial_rate, mean_reversion, volatility, dt, lambda)
 }
 
 pathwise_delta_cpp <- function(terminal_prices, strikes, initial_price, discount_factor, sign_multiplier, is_call) {
-    .Call(`_CompFinanceR_pathwise_delta_cpp`, terminal_prices, strikes, initial_price, discount_factor, sign_multiplier, is_call)
+    .Call('_CompFinanceR_pathwise_delta_cpp', PACKAGE = 'CompFinanceR', terminal_prices, strikes, initial_price, discount_factor, sign_multiplier, is_call)
 }
 
 pathwise_vega_cpp <- function(terminal_prices, adjustment, strikes, volatility, discount_factor, sign_multiplier, is_call) {
-    .Call(`_CompFinanceR_pathwise_vega_cpp`, terminal_prices, adjustment, strikes, volatility, discount_factor, sign_multiplier, is_call)
+    .Call('_CompFinanceR_pathwise_vega_cpp', PACKAGE = 'CompFinanceR', terminal_prices, adjustment, strikes, volatility, discount_factor, sign_multiplier, is_call)
 }
 
