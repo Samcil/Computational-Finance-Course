@@ -35,6 +35,21 @@ library(tidyr)
 library(plotly)
 ```
 
+## Unicode Normalisation
+
+Lecture scripts often annotate parameters with Greek letters or superscripted
+exponents. Use `normalize_to_ascii()` to convert those labels to ASCII before
+including them in documentation or regression tests.
+
+```{r}
+raw_labels <- c(
+  "Y = exp(X) with X ~ N(\u03bc, \u03c3\u00b2)",
+  "Characteristic function \u03c6(u)"
+)
+
+normalize_to_ascii(raw_labels)
+```
+
 ## COS Pricing for Black-Scholes
 
 We start with the Black-Scholes characteristic function and call/put pricing,

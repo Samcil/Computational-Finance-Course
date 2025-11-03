@@ -56,7 +56,9 @@ antithetic variates for variance reduction.
 }
 \examples{
 spec <- gbm_spec(initial_value = 100, drift = 0.03, volatility = 0.2)
-price_asian_call(spec, strike = c(95, 105), maturity = 1, n_paths = 2000,
-                 n_steps = 126, seed = 42)
+price_asian_call(spec,
+  strike = c(95, 105), maturity = 1, n_paths = 2000,
+  n_steps = 126, seed = 42
+)
 
 }
