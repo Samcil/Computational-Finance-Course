@@ -73,9 +73,22 @@
 | 5. Hybrid equity/rate | `BSHW_Comparison.py` | `bshw_spec`, `price_bshw_option_cos()`, and `bshw_equivalent_volatility()` replicate COS and Black-76 valuations; enforced by `tests/testthat/test-bshw.R`. |
 
 ### 5. Hybrid Equity/FX-Rate Models (FinancialEngineering_IR_xVA Lectures 09–10)
-- **Complete 2025-11-04** Delivered `bshw_spec`, `cos_call_put_price_stoch_ir()`, and Black-76 parity helpers matching `BSHW_Comparison.py`. Coverage enforced by `tests/testthat/test-bshw.R`.
-- **In progress** Extend hybrid utilities to `h1_hw_spec` (Heston-Hull-White) and `szhw_spec`, reusing the COS infrastructure and validating against `H1_HW_COS_vs_MC.py` and `SZHW_ImpliedVolatilities.py`.
-- **In progress** Add FX-layered hybrid spec built on domestic/foreign short-rate curves per `H1_HW_COS_vs_MC_FX.py`.
+- **Complete 2025-11-04** Delivered `bshw_spec`, `bshw_characteristic_function()`,
+  and COS/Black-76 pricing helpers mirroring the structure of
+  `BSHW_Comparison.py` (functions `ChFBSHW`,
+  `CallPutOptionPriceCOSMthd_StochIR`, and `BSHWOptionPrice`). The R
+  implementation keeps theta integrations in `bshw_characteristic_function()`
+  (via `bshw_theta_integrals_cpp()`), reuses the modular COS kernel
+  `cos_call_put_price_stoch_ir()`, and exposes `bshw_equivalent_volatility()`
+  for the Black-76 parity calculation. Parity is asserted in
+  `tests/testthat/test-bshw.R`, confirming that COS prices and the closed-form
+  forward evaluation match to the tolerance reported in the Python notebook.
+- **Planned** Extend hybrid utilities to `h1_hw_spec` (Heston-Hull-White) and
+  `szhw_spec`, reusing the COS infrastructure and validating against
+  `H1_HW_COS_vs_MC.py` and `SZHW_ImpliedVolatilities.py`.
+- **Planned** Add FX-layered hybrid spec built on domestic/foreign short-rate
+  curves per `H1_HW_COS_vs_MC_FX.py`, keeping characteristic functions
+  factored through reusable short-rate and equity modules.
 
 ### 6. Netting, Exposure, and Risk Analytics (Lectures 11–13)
 - Implement exposure specs that bundle valuation specs and schedule lists to compute pathwise exposure (`Exposures_HW_Netting.py`).
