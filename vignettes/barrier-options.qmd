@@ -1,0 +1,178 @@
+---
+title: "Barrier Options and Hit Probabilities"
+format:
+  html:
+    toc: true
+    toc-location: left
+execute:
+  message: false
+  warning: false
+  echo: true
+---
+
+## Motivation
+
+`Lecture 13/DigitalPayoffs_CostReduction.py` introduces barrier contracts and
+Monte Carlo diagnostics for hit probabilities. This vignette recreates those
+analyses in R with the new barrier utilities.
+
+### Learning Goals
+
+- Price up-and-in and up-and-out calls under GBM dynamics.
+- Estimate barrier hit probabilities along simulated paths.
+- Illustrate the parity between complemented structures and vanilla options.
+
+## Model and Simulation Inputs
+
+```{r}
+library(CompFinanceR)
+library(dplyr)
+library(plotly)
+library(ggplot2)
+set.seed(2024)
+
+barrier_spec <- gbm_spec(
+  initial_value = 100,
+  drift = 0.02,
+  volatility = 0.2
+)
+```
+
+## Pricing a Grid of Up-and-Out Calls
+
+`price_barrier_option()` accepts vectorised strikes and barriers, returning a
+tidy tibble with standard errors and hit diagnostics.
+
+```{r}
+up_out <- price_barrier_option(
+  process_spec = barrier_spec,
+  strike = c(95, 100),
+  barrier = c(110, 120),
+  maturity = 1,
+  barrier_type = "up-and-out",
+  option_type = "call",
+  n_paths = 3000,
+  n_steps = 200,
+  seed = 2024
+)
+up_out
+```
+
+## Barrier Hit Probability Estimates
+
+The helper `barrier_hit_probability()` isolates the first-passage metric used
+in many analytic approximations.
+
+```{r}
+up_hits <- barrier_hit_probability(
+  process_spec = barrier_spec,
+  barrier = c(105, 115, 125),
+  maturity = 1,
+  barrier_type = "up",
+  n_paths = 5000,
+  n_steps = 200,
+  seed = 2024
+)
+up_hits
+```
+
+## In-Out Parity Check
+
+The Python lecture highlights the identity that an up-and-in call plus an
+up-and-out call replicates a vanilla call. We can verify the R implementation
+numerically.
+
+```{r}
+strike <- 100
+barrier <- 125
+maturity <- 1
+
+vanilla_price <- price_options(
+  black_scholes_spec(
+    option_type = "call",
+    strike = strike,
+    maturity = maturity,
+    risk_free_rate = barrier_spec$drift
+  ),
+  spot = barrier_spec$initial_value,
+  volatility = barrier_spec$volatility
+)$price
+
+set.seed(303)
+out_price <- price_barrier_option(
+  process_spec = barrier_spec,
+  strike = strike,
+  barrier = barrier,
+  maturity = maturity,
+  barrier_type = "up-and-out",
+  option_type = "call",
+  n_paths = 8000,
+  n_steps = 220,
+  seed = 303
+)$price
+
+in_price <- price_barrier_option(
+  process_spec = barrier_spec,
+  strike = strike,
+  barrier = barrier,
+  maturity = maturity,
+  barrier_type = "up-and-in",
+  option_type = "call",
+  n_paths = 8000,
+  n_steps = 220,
+  seed = 303
+)$price
+
+c(
+  vanilla = vanilla_price,
+  in_plus_out = in_price + out_price,
+  absolute_gap = abs((in_price + out_price) - vanilla_price)
+)
+```
+
+The residual gap remains within Monte Carlo noise, reproducing the parity
+argument from the lecture.
+
+## Visual Summary
+
+```{r}
+ggplot(up_out, aes(barrier, price, colour = factor(strike))) +
+  geom_point(size = 2) +
+  geom_line() +
+  labs(
+    title = "Up-and-Out Call Prices",
+    x = "Barrier",
+    y = "Price",
+    colour = "Strike"
+  )
+```
+
+```{r}
+plot_ly(up_out, x = ~barrier, y = ~price, color = ~factor(strike),
+        type = "scatter", mode = "lines+markers") |>
+  layout(
+    title = "Up-and-Out Call Prices (Interactive)",
+    xaxis = list(title = "Barrier"),
+    yaxis = list(title = "Price"),
+    legend = list(title = list(text = "Strike"))
+  )
+```
+
+```{r}
+plot_ly(up_hits, x = ~barrier, y = ~hit_probability, type = "scatter",
+        mode = "lines+markers", line = list(color = "darkorange")) |>
+  layout(
+    title = "Barrier Hit Probability",
+    xaxis = list(title = "Barrier"),
+    yaxis = list(title = "Probability")
+  )
+```
+
+## Key Takeaways
+
+- `price_barrier_option()` bundles payoff filtering, hit tracking, and
+  discounting in a single tidy workflow.
+- Hit probabilities are accessible as a standalone diagnostic for stress
+  testing.
+- In-out parity confirms numerical consistency with the Python teaching
+  materials.

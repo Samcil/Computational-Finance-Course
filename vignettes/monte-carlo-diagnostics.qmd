@@ -1,0 +1,278 @@
+---
+title: "Monte Carlo Diagnostics"
+format:
+  html:
+    toc: true
+    toc-location: left
+execute:
+  message: false
+  warning: false
+  echo: true
+---
+
+## Motivation
+
+`Lecture 09/Monte Carlo Simulation` analyses stochastic calculus basics,
+quadratic variation, and numerical convergence through the scripts
+`DeterministicFunction.py`, `StochasticIntegrals.py`, `dWdW.py`,
+`EulerConvergence_GBM.py`, and `MilsteinConvergence_GBM.py`. This vignette
+recreates those experiments with tidy helpers and interactive Plotly visuals.
+
+### Learning Goals
+
+- Compare hit-or-miss versus sample-mean Monte Carlo integration.
+- Examine quadratic variation and stochastic integrals of Brownian motion.
+- Measure Euler and Milstein convergence rates with interactive diagnostics.
+
+## Setup
+
+```{r}
+library(CompFinanceR)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(plotly)
+set.seed(2025)
+```
+
+## Monte Carlo Integration
+
+We approximate \(\int_0^1 e^x dx\) using both hit-or-miss and sample-mean
+estimators.
+
+```{r}
+exp_integrand <- function(x) exp(x)
+true_value <- exp(1) - 1
+
+hit_estimate <- mc_integrate_hit_or_miss(
+  g = exp_integrand,
+  lower = 0,
+  upper = 1,
+  lower_bound = 0,
+  upper_bound = 3,
+  n_samples = 20000,
+  seed = 5
+)
+
+mean_estimate <- mc_integrate_sample_mean(
+  g = exp_integrand,
+  lower = 0,
+  upper = 1,
+  n_samples = 20000,
+  seed = 5
+)
+
+integration_summary <- bind_rows(hit_estimate, mean_estimate) |>
+  mutate(true_value = true_value, error = estimate - true_value)
+integration_summary
+```
+
+### Hit-or-Miss Cloud
+
+Interactive scatter replicates the lecture illustration of accepted and
+rejected samples.
+
+```{r}
+mc_samples <- tibble::tibble(
+  x = runif(4000, 0, 1),
+  y = runif(4000, 0, 3)
+) |>
+  mutate(g_of_x = exp_integrand(x), hit = y <= g_of_x)
+
+curve_points <- tibble::tibble(
+  x = seq(0, 1, length.out = 200),
+  g_of_x = exp_integrand(x)
+)
+
+plot_ly(mc_samples, x = ~x, y = ~y, color = ~hit, colors = c("firebrick", "seagreen"),
+        type = "scatter", mode = "markers",
+        marker = list(size = 4, opacity = 0.55)) |>
+  add_lines(data = curve_points, x = ~x, y = ~g_of_x, name = "exp(x)",
+            line = list(color = "steelblue", width = 3)) |>
+  layout(
+    title = "Hit-or-Miss Monte Carlo Integration",
+    xaxis = list(title = "x"),
+    yaxis = list(title = "y"),
+    legend = list(title = list(text = "Sample Accepted"))
+  )
+```
+
+## Quadratic Variation Diagnostics
+
+`dWdW.py` studies \(E[(\nabla W)^2]\) and its variance. The helper
+`quadratic_variation_diagnostics()` reproduces that behaviour.
+
+```{r}
+qv_results <- quadratic_variation_diagnostics(
+  maturity = 1,
+  n_paths = 20000,
+  step_grid = seq(10, 200, by = 10),
+  seed = 9
+)
+qv_results |> slice_tail(n = 5)
+```
+
+```{r}
+plot_ly() |>
+  add_lines(data = qv_results, x = ~dt, y = ~mean_sq_increment,
+            name = "Empirical Mean", line = list(color = "steelblue")) |>
+  add_lines(data = qv_results, x = ~dt, y = ~expected_mean,
+            name = "Theoretical Mean", line = list(color = "black", dash = "dash")) |>
+  add_lines(data = qv_results, x = ~dt, y = ~var_sq_increment,
+            name = "Empirical Variance", yaxis = "y2",
+            line = list(color = "tomato")) |>
+  add_lines(data = qv_results, x = ~dt, y = ~expected_variance,
+            name = "Theoretical Variance", yaxis = "y2",
+            line = list(color = "black", dash = "dot")) |>
+  layout(
+    title = "Quadratic Variation Diagnostics",
+    xaxis = list(title = "dt"),
+    yaxis = list(title = "Mean of (ΔW)^2"),
+    yaxis2 = list(overlaying = "y", side = "right", title = "Variance of (ΔW)^2"),
+    legend = list(orientation = "h")
+  )
+```
+
+## Brownian Motion Integrals
+
+`StochasticIntegrals.py` tracks Brownian motion and the associated Riemann and
+Itô integrals. The `simulate_stochastic_integrals()` helper returns all three in
+one tidy tibble.
+
+```{r}
+integrals <- simulate_stochastic_integrals(
+  maturity = 1,
+  n_paths = 1,
+  n_steps = 1500,
+  seed = 17
+)
+one_path <- integrals |>
+  filter(path_id == 1)
+```
+
+```{r}
+plot_ly(one_path, x = ~time, y = ~brownian, name = "W(t)", type = "scatter", mode = "lines",
+        line = list(color = "royalblue")) |>
+  add_lines(y = ~riemann_integral, name = "∫ W(s) ds", line = list(color = "firebrick")) |>
+  add_lines(y = ~ito_integral, name = "∫ W(s) dW(s)", line = list(color = "forestgreen")) |>
+  layout(
+    title = "Brownian Motion and Its Integrals",
+    xaxis = list(title = "Time"),
+    yaxis = list(title = "Value"),
+    legend = list(orientation = "h")
+  )
+```
+
+The terminal Itô integral matches \((W_T^2 - T)/2\) up to simulation error.
+
+```{r}
+terminal_check <- one_path |>
+  slice_tail(n = 1) |>
+  mutate(ito_formula = (brownian^2 - 1) / 2,
+         difference = ito_integral - ito_formula)
+terminal_check
+```
+
+For a broader view we can inspect a surface of Brownian paths reminiscent of
+the lecture animations.
+
+```{r}
+brownian_surface <- simulate_stochastic_integrals(
+  maturity = 1,
+  n_paths = 25,
+  n_steps = 300,
+  seed = 42
+) |>
+  select(path_id, time, brownian) |>
+  pivot_wider(names_from = time, values_from = brownian) |>
+  arrange(path_id)
+
+time_vals <- as.numeric(names(brownian_surface)[-1])
+path_matrix <- as.matrix(brownian_surface[, -1])
+
+plot_ly(x = time_vals, y = brownian_surface$path_id, z = path_matrix,
+        type = "surface", colorscale = "GnBu") |>
+  layout(
+    title = "Brownian Motion Surface",
+    scene = list(
+      xaxis = list(title = "Time"),
+      yaxis = list(title = "Path"),
+      zaxis = list(title = "W(t)")
+    )
+  )
+```
+
+## Euler vs Milstein Convergence
+
+`EulerConvergence_GBM.py` and `MilsteinConvergence_GBM.py` benchmark the weak
+error across discretisations. We replicate that analysis using
+`euler_convergence_study()` and `milstein_convergence_study()`.
+
+```{r}
+step_grid <- c(4, 8, 16, 32, 64, 128, 256)
+convergence <- bind_rows(
+  euler_convergence_study(
+    initial_price = 100,
+    drift = 0.05,
+    volatility = 0.3,
+    maturity = 1,
+    n_paths = 20000,
+    step_grid = step_grid,
+    seed = 7
+  ),
+  milstein_convergence_study(
+    initial_price = 100,
+    drift = 0.05,
+    volatility = 0.3,
+    maturity = 1,
+    n_paths = 20000,
+    step_grid = step_grid,
+    seed = 7
+  )
+)
+convergence
+```
+
+```{r}
+plot_ly(convergence, x = ~log10(dt), y = ~log10(rmse), color = ~scheme,
+        type = "scatter", mode = "lines+markers",
+        colors = c("#1f77b4", "#ff7f0e")) |>
+  layout(
+    title = "Euler vs Milstein Convergence (log-log)",
+    xaxis = list(title = "log10(dt)"),
+    yaxis = list(title = "log10(RMSE)"),
+    legend = list(x = 0.02, y = 0.98)
+  )
+```
+
+Add a reference slope of one to match the lecture's log-log diagnostic.
+
+```{r}
+anchor <- convergence |>
+  arrange(dt) |>
+  slice(1) |>
+  summarise(dt = dt, rmse = rmse)
+reference <- tibble::tibble(
+  log_dt = log10(range(convergence$dt)),
+  log_rmse = log10(anchor$rmse) + 1 * (log_dt - log10(anchor$dt))
+)
+
+plot_ly(convergence, x = ~log10(dt), y = ~log10(rmse), color = ~scheme,
+        type = "scatter", mode = "lines+markers") |>
+  add_lines(data = reference, x = ~log_dt, y = ~log_rmse,
+            name = "Reference slope 1", line = list(color = "gray40", dash = "dash")) |>
+  layout(
+    title = "Weak Convergence Rate Comparison",
+    xaxis = list(title = "log10(dt)"),
+    yaxis = list(title = "log10(RMSE)")
+  )
+```
+
+## Key Takeaways
+
+- Tidy Monte Carlo helpers mirror the lecture's integration, stochastic
+  calculus, and convergence diagnostics.
+- Plotly reproduces the interactive figures (hit-or-miss clouds, Brownian
+  surfaces, log-log convergence) used in the Python notebooks.
+- Euler and Milstein schemes follow the expected slope-1 weak convergence when
+  visualised on log-log axes, confirming the lecture conclusions.

@@ -1,0 +1,219 @@
+---
+title: "Understanding Stochastic Integrals"
+format:
+  html:
+    toc: true
+    toc-location: left
+    mathjax: true
+execute:
+  message: false
+  warning: false
+  echo: true
+---
+
+## Why This Vignette?
+
+The Lecture 09 materials introduce deterministic (Riemann) integrals and Itô stochastic integrals, but the shift from calculus to random integration can feel abrupt. This vignette breaks the concepts into concrete questions:
+
+-   **What is the input?**
+-   **What does the integral operator do to that input?**
+-   **What kind of object comes out on the other side?**
+-   **How should we think about the randomness—does the result define a full probability distribution?**
+
+Tidy simulations and Plotly visualisations connect the definitions back to the Monte Carlo experiments used throughout the course.
+
+## Setup
+
+```{r}
+library(CompFinanceR)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(plotly)
+set.seed(777)
+```
+
+## Deterministic vs Stochastic Integrals
+
+At a high level, both integrals accumulate infinitesimal pieces of information, but the ingredients differ.
+
+| Feature | Deterministic Integral | Stochastic (Itô) Integral |
+|------------------------|------------------------|------------------------|
+| Input process | A deterministic function ($f(t)$) | A stochastic process ($W(t)$) |
+| Integrand | Another deterministic function ($g(t)$) | Predictable function of time and current state, e.g. ($g(t, W(t))$) |
+| Integrator | (dt) (time increments) | (dW(t)) (Brownian increments) |
+| Output | A single number ($\int_0^T f(t) g(t)dt$) | A random variable ($\int_0^T g(t, W(t)),dW(t)$) |
+| Randomness | None | Induced entirely by the driving process ($W(t)$) |
+
+The deterministic integral maps functions to real numbers. The stochastic integral maps *adapted* random processes to **new random variables**.
+
+### Key Points to Remember
+
+-   The Itô integral is defined path-by-path as a limit of random sums. For each simulated Brownian path, you get one realised value of the integral.
+-   Because the Brownian path is random, the integral is random. Its **law** (the distribution of those values) can often be computed or approximated, but the integral itself is not the distribution—it is the random variable whose distribution we study.
+-   Conditioning matters: the integrand must depend only on information available up to time (t); this keeps the integral well-behaved.
+
+## Deterministic Function Example
+
+We start with the classic integral ($\int_0^1 e^tdt = e - 1$). Monte Carlo approximations replicate the lecture code: the inputs are the function `exp_integrand(t)` and the interval limits.
+
+```{r}
+exp_integrand <- function(t) exp(t)
+true_value <- exp(1) - 1
+
+sample_mean_est <- mc_integrate_sample_mean(
+  g = exp_integrand,
+  lower = 0,
+  upper = 1,
+  n_samples = 20000,
+  seed = 10
+)
+
+sample_mean_est |>
+  mutate(true_value = true_value, error = estimate - true_value)
+```
+
+The output is a single deterministic approximation with an estimated standard error—no randomness remains once the random samples are fixed.
+
+## Brownian Motion and the Itô Integral
+
+Next we revisit `simulate_stochastic_integrals()`, which simultaneously produces Brownian motion $(W(t))$ and the integrals
+
+$$
+I_1(t) = \int_0^t W(s)ds, \qquad I_2(t) = \int_0^t W(s)dW(s).
+$$
+
+```{r}
+integrals <- simulate_stochastic_integrals(
+  maturity = 1,
+  n_paths = 1,
+  n_steps = 2000,
+  seed = 123
+)
+one_path <- integrals |>
+  filter(path_id == 1)
+```
+
+```{r}
+plot_ly(one_path, x = ~time) |>
+  add_lines(y = ~brownian, name = "W(t)", line = list(color = "steelblue")) |>
+  add_lines(y = ~riemann_integral, name = "∫ W(s) ds", line = list(color = "firebrick")) |>
+  add_lines(y = ~ito_integral, name = "∫ W(s) dW(s)", line = list(color = "forestgreen")) |>
+  layout(
+    title = "One Realisation: Brownian Motion and Its Integrals",
+    xaxis = list(title = "Time"),
+    yaxis = list(title = "Value"),
+    legend = list(orientation = "h")
+  )
+```
+
+For this single path we get concrete **numbers** for the integrals. Change the random seed and the path changes, producing different integral values. Each integral is therefore a random variable.
+
+## What Distribution Do We Get?
+
+To see the distribution, simulate many paths and collect the terminal values of both integrals.
+
+```{r}
+many_paths <- simulate_stochastic_integrals(
+  maturity = 1,
+  n_paths = 10000,
+  n_steps = 400,
+  seed = 456
+)
+terminal <- many_paths |>
+  filter(time == 1) |>
+  select(path_id, riemann_integral, ito_integral)
+```
+
+```{r}
+plot_ly(terminal, x = ~riemann_integral, type = "histogram", nbinsx = 60,
+        marker = list(color = "#1f77b4")) |>
+  layout(
+    title = "Distribution of ∫ W(s) ds at T = 1",
+    xaxis = list(title = "Integral Value"),
+    yaxis = list(title = "Count")
+  )
+```
+
+```{r}
+plot_ly(terminal, x = ~ito_integral, type = "histogram", nbinsx = 60,
+        marker = list(color = "#ff7f0e")) |>
+  layout(
+    title = "Distribution of ∫ W(s) dW(s) at T = 1",
+    xaxis = list(title = "Integral Value"),
+    yaxis = list(title = "Count")
+  )
+```
+
+These histograms approximate the theoretical laws:
+
+-   (I_1(1)) is normally distributed with mean 0 and variance (1/3).
+-   (I_2(1)) equals ($\frac{1}{2}(W(1)^2 - 1)$), so it inherits the distribution of a shifted chi-squared random variable.
+
+We can confirm the analytical expectations directly from the simulation.
+
+```{r}
+terminal |>
+  summarise(
+    mean_I1 = mean(riemann_integral),
+    var_I1 = var(riemann_integral),
+    mean_I2 = mean(ito_integral),
+    var_I2 = var(ito_integral)
+  )
+```
+
+The empirical moments align with the theory. Crucially, the stochastic integral **does not** “return a probability distribution.” It returns a random variable; the distribution is the law of that random variable, which we can analyse via moments, density functions, or simulations.
+
+## How the Itô Integral Acts on the Input
+
+Think of the Itô integral as a noise filter:
+
+1.  **Input:** A predictable process (g(t, W(t))) scaled by Brownian shocks.
+2.  **Operation:** Multiply each Brownian increment (dW) by the current value of the integrand and accumulate the products.
+3.  **Output:** A random variable with mean zero (under mild integrability conditions) and variance equal to ($\int_0^T g(t, W(t))^2 dt$) in expectation.
+
+### Deterministic Integrands in an Itô Integral
+
+If the integrand is deterministic, e.g. (g(t) = t), the integral still produces a random variable, but we can compute its distribution directly.
+
+```{r}
+n_paths_linear <- 10000
+n_steps_linear <- 400
+dt_linear <- 1 / n_steps_linear
+time_weights <- rep(seq(0, 1 - dt_linear, length.out = n_steps_linear), each = n_paths_linear)
+deterministic_integrand <- function(values) time_weights
+
+linear_integrals <- simulate_stochastic_integrals(
+  maturity = 1,
+  n_paths = n_paths_linear,
+  n_steps = n_steps_linear,
+  integrand = deterministic_integrand,
+  seed = 91
+) |>
+  filter(time == 1) |>
+  pull(ito_integral)
+
+plot_ly(x = linear_integrals, type = "histogram", nbinsx = 60,
+        marker = list(color = "#9467bd")) |>
+  layout(
+    title = "Itô Integral with Deterministic Integrand g(t)=t",
+    xaxis = list(title = "Integral Value"),
+    yaxis = list(title = "Count")
+  )
+```
+
+The law is still Gaussian with mean zero, and the variance equals ($\int_0^1 t^2 dt = 1/3$), because the randomness enters through (dW).
+
+## Checklist for Understanding
+
+-   **Identify the integrator:** (dt) for deterministic calculus, (dW) for Itô. The integrator determines the rules of the game.
+-   **Describe the integrand:** make sure it depends only on present/past information.
+-   **Follow the accumulation:** the integral sums the product of integrand and integrator along the timeline.
+-   **Interpret the output:** one realised value per path; collect many paths to learn the distribution.
+-   **Ask about variance:** for Itô integrals the quadratic variation drives the dispersion—studying (g(t)\^2) or (g(t, W(t))\^2) tells you how volatile the integral becomes.
+
+## Key Takeaways
+
+-   Deterministic integrals map deterministic functions to numbers. Stochastic integrals map adapted processes to random variables.
+-   The randomness comes solely from the driving process (Brownian motion, in our examples). The integral itself does not “output a distribution,” but each simulation realisation samples from that distribution.
+-   Visualising many sample paths and their integral values demystifies the Itô construction and grounds the theory in concrete data.

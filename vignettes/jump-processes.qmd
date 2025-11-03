@@ -1,0 +1,189 @@
+---
+title: "Jump Processes and the Merton Model"
+format:
+  html:
+    toc: true
+    toc-location: left
+execute:
+  message: false
+  warning: false
+  echo: true
+---
+
+## Motivation
+
+`Lecture 05/Jump Processes` explores Poisson processes and the Merton
+jump-diffusion model via the scripts `PoissonProcess_paths.py` and
+`MertonProcess_paths.py`. This vignette recreates those experiments in R.
+
+### Learning Goals
+
+- Simulate Poisson jump counts and event times.
+- Generate Merton jump-diffusion price paths.
+- Inspect how jump risk alters log-return distributions.
+
+## Setup
+
+```{r}
+library(CompFinanceR)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+set.seed(101)
+```
+
+## Poisson Process Simulation
+
+`poisson_spec()` configures the intensity, while `simulate_paths()` produces the
+cumulative jump count along a time grid.
+
+```{r}
+poisson <- poisson_spec(intensity = 0.8)
+
+counts <- simulate_paths(
+  poisson,
+  n_paths = 5,
+  n_steps = 100,
+  maturity = 1
+)
+counts
+```
+
+```{r}
+counts |>
+  ggplot(aes(time, count, group = path_id)) +
+  geom_step() +
+  labs(title = "Poisson Jump Counts", y = "Count")
+```
+
+```{r}
+plot_ly(counts, x = ~time, y = ~count, color = ~factor(path_id),
+        type = "scatter", mode = "lines",
+        line = list(shape = "hv"), showlegend = FALSE) |>
+  layout(
+    title = "Poisson Jump Counts (Interactive)",
+    xaxis = list(title = "Time"),
+    yaxis = list(title = "Count")
+  )
+```
+
+## Merton Jump-Diffusion Paths
+
+`merton_spec()` augments GBM with normally distributed jumps, matching the
+parameters in the Python lecture.
+
+```{r}
+merton <- merton_spec(
+  initial_price = 100,
+  risk_free_rate = 0.02,
+  volatility = 0.2,
+  jump_intensity = 0.8,
+  jump_mean = -0.05,
+  jump_sd = 0.2
+)
+
+merton_paths <- simulate_paths(
+  merton,
+  n_paths = 5,
+  n_steps = 250,
+  maturity = 1,
+  seed = 101
+)
+```
+
+```{r}
+merton_paths |>
+  ggplot(aes(time, stock_price, group = path_id)) +
+  geom_line() +
+  labs(title = "Merton Jump-Diffusion", y = "Price")
+```
+
+```{r}
+plot_ly(merton_paths, x = ~time, y = ~stock_price, color = ~factor(path_id),
+        type = "scatter", mode = "lines", showlegend = FALSE) |>
+  layout(
+    title = "Merton Jump-Diffusion Paths (Interactive)",
+    xaxis = list(title = "Time"),
+    yaxis = list(title = "Price")
+  )
+```
+
+## Comparing with Diffusion-Only GBM
+
+```{r}
+gbm_paths <- simulate_paths(
+  gbm_spec(initial_value = 100, drift = 0.02, volatility = 0.2),
+  n_paths = 10000,
+  n_steps = 12,
+  maturity = 1,
+  seed = 101
+)
+
+merton_many <- simulate_paths(
+  merton,
+  n_paths = 10000,
+  n_steps = 12,
+  maturity = 1,
+  seed = 101
+)
+
+summary_compare <- bind_rows(
+  mutate(gbm_paths, model = "GBM"),
+  mutate(merton_many, model = "Merton")
+) |>
+  filter(time == 1) |>
+  summarise(
+    mean_log_return = mean(log(stock_price / dplyr::first(stock_price))),
+    sd_log_return = sd(log(stock_price / dplyr::first(stock_price))),
+    .by = model
+  )
+summary_compare
+```
+
+Jump risk broadens the distribution and shifts the mean in line with the Python
+insight.
+
+## Histogram Comparison
+
+```{r}
+bind_rows(
+  mutate(gbm_paths, model = "GBM"),
+  mutate(merton_many, model = "Merton")
+) |>
+  filter(time == 1) |>
+  mutate(log_return = log(stock_price / 100)) |>
+  ggplot(aes(log_return, fill = model)) +
+  geom_histogram(alpha = 0.6, bins = 60, position = "identity") +
+  labs(title = "Terminal Log-Return Distribution")
+```
+
+```{r}
+plot_ly(
+  bind_rows(
+    mutate(gbm_paths, model = "GBM"),
+    mutate(merton_many, model = "Merton")
+  ) |>
+    filter(time == 1) |>
+    mutate(log_return = log(stock_price / 100)),
+  x = ~log_return,
+  color = ~model,
+  type = "histogram",
+  nbinsx = 60,
+  opacity = 0.6
+) |>
+  layout(
+    title = "Terminal Log-Return Distribution (Interactive)",
+    barmode = "overlay",
+    xaxis = list(title = "Log return"),
+    yaxis = list(title = "Count")
+  )
+```
+
+## Key Takeaways
+
+- `poisson_spec()` and `merton_spec()` encapsulate the jump process logic used
+  in Lecture 05.
+- The tidy simulation framework makes it easy to compare jump-diffusion against
+  pure diffusion models.
+- Jump-induced fat tails appear immediately in the log-return distribution,
+  matching the Python demonstrations.

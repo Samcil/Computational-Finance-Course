@@ -1,0 +1,51 @@
+Package: CompFinanceR
+Type: Package
+Title: Computational Finance Tools in R
+Version: 0.2.0
+Authors@R: c(
+    person("Lech", "Grzelak", email = "lech.grzelak@example.com", role = c("aut")),
+    person("Repository", "Contributor", email = "contributor@example.com", role = c("cre", "aut"))
+    )
+Description: A comprehensive R package for computational finance implementing a consistent
+    spec-fit-predict interface inspired by tidymodels and hardhat principles. Provides tools for
+    simulating stochastic processes (GBM, ABM, Heston, CIR, Merton, Bates), pricing options
+    (European, Asian, Barrier, Digital, Forward Start), computing Greeks, and implementing
+    hedging strategies. Uses modern functional programming with purrr (no for loops or apply),
+    robust input validation with checkmate, and follows tidyverse design principles throughout.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Depends:
+    R (>= 4.1.0)
+Imports:
+    tibble (>= 3.0.0),
+    dplyr (>= 1.0.0),
+    ggplot2 (>= 3.3.0),
+    purrr (>= 1.1.0),
+    tidyr (>= 1.1.0),
+    rlang (>= 1.0.0),
+    checkmate (>= 2.0.0),
+    hardhat (>= 1.3.0),
+    cli (>= 3.0.0),
+    MASS,
+    gsl,
+    stats,
+    withr (>= 2.5.0),
+    Rcpp,
+    RcppParallel
+LinkingTo:
+    Rcpp,
+    RcppParallel
+Suggests:
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown,
+    quarto,
+    withr,
+    covr,
+    mirai
+VignetteBuilder: quarto
+URL: https://github.com/Samcil/Computational-Finance-Course
+BugReports: https://github.com/Samcil/Computational-Finance-Course/issues

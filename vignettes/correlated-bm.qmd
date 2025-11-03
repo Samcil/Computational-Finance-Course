@@ -1,0 +1,151 @@
+---
+title: "Simulating Correlated Brownian Motions"
+format:
+  html:
+    toc: true
+    toc-location: left
+execute:
+  message: false
+  warning: false
+  echo: true
+---
+
+## Motivation
+
+`Lecture 07/Stochastic Volatility Models/CorrelatedBM.py` constructs correlated
+Brownian motions for multi-factor models. The `CompFinanceR` package provides a
+compact interface for generating those paths and inspecting the realised
+correlations.
+
+### Learning Goals
+
+- Generate correlated Brownian motion increments.
+- Verify sample correlations against the target matrix.
+- Prepare inputs for multi-factor volatility models.
+
+## Setup
+
+```{r}
+library(CompFinanceR)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+set.seed(77)
+```
+
+## Correlated Brownian Specification
+
+Use `correlated_bm_spec()` to supply the covariance matrix.
+
+```{r}
+Sigma <- matrix(c(1, 0.6, 0.6, 1), nrow = 2)
+cbm <- correlated_bm_spec(
+  initial_values = c(0, 0),
+  covariance = Sigma
+)
+
+cbm_paths <- simulate_paths(
+  cbm,
+  n_paths = 5,
+  n_steps = 252,
+  maturity = 1
+)
+cbm_paths
+```
+
+## Visual Inspection
+
+```{r}
+cbm_paths |>
+  ggplot(aes(time, value, colour = factor(path_id))) +
+  geom_line() +
+  facet_wrap(~ component, scales = "free_y") +
+  labs(
+    title = "Correlated Brownian Motions",
+    x = "Time",
+    y = "Brownian Level",
+    colour = "Path"
+  )
+```
+
+```{r}
+plot_ly(cbm_paths, x = ~time, y = ~value, color = ~factor(path_id),
+        type = "scatter", mode = "lines",
+        showlegend = FALSE) |>
+  layout(
+    title = "Correlated Brownian Motions (Interactive)",
+    xaxis = list(title = "Time"),
+    yaxis = list(title = "Brownian Level")
+  )
+```
+
+## Realised Correlation
+
+The Python notebook estimates sample correlations between increments. We can
+replicate that using tidy operations.
+
+```{r}
+realised_corr <- cbm_paths |>
+  group_by(path_id) |>
+  arrange(time, .by_group = TRUE) |>
+  mutate(increment = value - dplyr::lag(value, default = first(value))) |>
+  ungroup() |>
+  select(path_id, time, component, increment) |>
+  tidyr::pivot_wider(names_from = component, values_from = increment) |>
+  summarise(
+    corr = cor(`component_1`, `component_2`),
+    .groups = "drop"
+  )
+realised_corr
+```
+
+```{r}
+increment_pairs <- cbm_paths |>
+  group_by(path_id, component) |>
+  arrange(time, .by_group = TRUE) |>
+  mutate(increment = value - dplyr::lag(value, default = first(value))) |>
+  ungroup() |>
+  select(path_id, time, component, increment) |>
+  tidyr::pivot_wider(names_from = component, values_from = increment)
+
+plot_ly(increment_pairs, x = ~`component_1`, y = ~`component_2`,
+        color = ~factor(path_id), type = "scatter",
+        mode = "markers", marker = list(size = 4, opacity = 0.6),
+        showlegend = FALSE) |>
+  layout(
+    title = "Increment Scatter (Interactive)",
+    xaxis = list(title = "ΔW₁"),
+    yaxis = list(title = "ΔW₂")
+  )
+```
+
+The realised correlation is close to the target 0.6, echoing the validation in
+the Python script.
+
+## Extended Example: 3 Factors
+
+```{r}
+Sigma3 <- matrix(c(
+  1, 0.3, -0.2,
+  0.3, 1, 0.5,
+  -0.2, 0.5, 1
+), nrow = 3, byrow = TRUE)
+cbm3 <- correlated_bm_spec(initial_values = rep(0, 3), covariance = Sigma3)
+paths3 <- simulate_paths(cbm3, n_paths = 1, n_steps = 252, maturity = 1)
+
+tidyr::pivot_wider(paths3, names_from = component, values_from = value) |>
+  select(-time, -path_id) |>
+  cor()
+```
+
+The empirical correlation matrix clusters around the input values, reinforcing
+the method highlighted in Lecture 07.
+
+## Key Takeaways
+
+- `correlated_bm_spec()` handles correlation matrices directly and produces tidy
+  Brownian motion samples.
+- Realised correlations align with the target matrix, matching the verification
+  steps in the Python teaching script.
+- These samples feed naturally into the stochastic volatility utilities
+  implemented elsewhere in the package.

@@ -1,0 +1,141 @@
+---
+title: "Asian Options via Monte Carlo Simulation"
+format:
+  html:
+    toc: true
+    toc-location: left
+execute:
+  message: false
+  warning: false
+  echo: true
+---
+
+## Motivation
+
+The lecture script `Lecture 13/AsianOption.py` prices arithmetic-average Asian
+options under geometric Brownian motion. This vignette shows how to reproduce
+and extend that workflow in pure R using the `CompFinanceR` package.
+
+### Learning Goals
+
+- Review the Asian option contract and Monte Carlo pricing setup.
+- Simulate path averages with both standard and antithetic sampling.
+- Compare estimator precision between sampling methods.
+
+## Package Setup
+
+```{r}
+library(CompFinanceR)
+library(dplyr)
+library(plotly)
+library(ggplot2)
+```
+
+The package exports GBM specifications and Monte Carlo helpers. We set a seed
+for reproducibility throughout the vignette.
+
+```{r}
+set.seed(123)
+```
+
+## Constructing the Market Model
+
+The GBM parameters match the Python lecture defaults: a 100 spot, 3% drift, and
+20% volatility.
+
+```{r}
+asian_spec <- gbm_spec(
+  initial_value = 100,
+  drift = 0.03,
+  volatility = 0.2
+)
+```
+
+## Pricing Calls Across Strikes
+
+The `price_asian_call()` helper wraps the simulation loop and returns tidy
+results for any strike vector.
+
+```{r}
+call_prices <- price_asian_call(
+  process_spec = asian_spec,
+  strike = c(90, 100, 110),
+  maturity = 1,
+  n_paths = 2000,
+  n_steps = 252,
+  seed = 123
+)
+call_prices
+```
+
+The output includes the standard error estimated from the Monte Carlo sample,
+mirroring the summary tables generated in the Python notebook.
+
+## Variance Reduction with Antithetics
+
+`asian_variance_reduction()` evaluates the contract with and without antithetic
+variates using a single set of common random numbers.
+
+```{r}
+comparison <- asian_variance_reduction(
+  process_spec = asian_spec,
+  strike = 100,
+  maturity = 1,
+  option_type = "call",
+  n_paths = 5000,
+  n_steps = 200,
+  seed = 321
+)
+comparison
+```
+
+Antithetic sampling roughly halves the reported standard error, matching the
+variance reduction behaviour observed in the original Python material.
+
+## Visualising Strike Sensitivity
+
+A compact plot helps communicate how prices decay with higher strikes.
+
+```{r}
+ggplot(call_prices, aes(strike, price)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Asian Call Prices vs Strike",
+    x = "Strike",
+    y = "Monte Carlo Price"
+  )
+```
+
+```{r}
+plot_ly(call_prices, x = ~strike, y = ~price, type = "scatter",
+        mode = "lines+markers", line = list(color = "steelblue")) |>
+  layout(
+    title = "Asian Call Prices vs Strike (Interactive)",
+    xaxis = list(title = "Strike"),
+    yaxis = list(title = "Price")
+  )
+```
+
+```{r}
+plot_ly(comparison, x = ~method, y = ~estimate, type = "bar",
+        hovertemplate = paste(
+          "Method: %{x}<br>",
+          "Estimate: %{y:.4f}<br>",
+          "Std Error: %{customdata:.4f}",
+          sep = ""
+        ),
+        customdata = comparison$std_error) |>
+  layout(
+    title = "Variance Reduction Summary",
+    xaxis = list(title = "Method"),
+    yaxis = list(title = "Price Estimate")
+  )
+```
+
+## Key Takeaways
+
+- The new R helpers replicate the lecture outputs with concise syntax.
+- Antithetic sampling is opt-in and uses shared random draws for fair
+  comparisons.
+- Tidy outputs integrate with `dplyr` and `ggplot2` for quick diagnostics.

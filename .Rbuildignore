@@ -1,0 +1,17 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^LICENSE\.md$
+^README\.Rmd$
+^\.github$
+^codecov\.yml$
+^\.git$
+^\.gitignore$
+^Lecture.*
+^Questions-and-Answers$
+^REFACTORING.*
+^ACHIEVEMENT.*
+^R_PORT_PLAN\.md$
+^vignettes/.*\.html$
+^vignettes/.*_cache/
+^vignettes/_freeze/
+^vignettes/_site/

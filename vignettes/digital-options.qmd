@@ -1,0 +1,175 @@
+---
+title: "Digital Options with Closed Forms and COS"
+format:
+  html:
+    toc: true
+    toc-location: left
+execute:
+  message: false
+  warning: false
+  echo: true
+---
+
+## Motivation
+
+`Lecture 08/CashOrNothing_COS_Method.py` combines analytic Black-Scholes
+formulas with Fourier COS density recovery to value cash-or-nothing payoffs.
+This vignette demonstrates the equivalent R API in `CompFinanceR`.
+
+### Learning Goals
+
+- Price digital options in closed form under Black-Scholes.
+- Apply the COS method to approximate digital prices from a characteristic
+  function.
+- Validate parity relationships between digital calls and puts.
+
+## Setup
+
+```{r}
+library(CompFinanceR)
+library(dplyr)
+library(plotly)
+library(ggplot2)
+```
+
+## Closed-Form Pricing
+
+`price_digital_call()` and `price_digital_put()` vectorise over spot and
+volatility inputs, returning tidy results ready for plotting.
+
+```{r}
+bs_spec <- black_scholes_spec(
+  option_type = "call",
+  strike = 100,
+  maturity = 1,
+  risk_free_rate = 0.03,
+  dividend_yield = 0.01
+)
+
+digital_grid <- price_digital_call(
+  model_spec = bs_spec,
+  spot = c(95, 100, 105),
+  volatility = c(0.18, 0.22)
+)
+digital_grid
+```
+
+## Digital Put-Call Parity
+
+The discounted payout identity from the lecture is preserved in the R helper.
+
+```{r}
+call_price <- price_digital_call(
+  model_spec = bs_spec,
+  spot = 100,
+  volatility = 0.2,
+  payout = 2
+)$price
+
+put_price <- price_digital_put(
+  model_spec = bs_spec,
+  spot = 100,
+  volatility = 0.2,
+  payout = 2
+)$price
+
+c(
+  call = call_price,
+  put = put_price,
+  discounted_payout = 2 * exp(-0.03)
+)
+```
+
+## COS Approximation
+
+We can replicate the COS workflow from Python by supplying a characteristic
+function. For a log-normal model the analytic density is known, giving us a
+simple accuracy check.
+
+```{r}
+spot <- 100
+sigma <- 0.2
+risk_free <- 0.03
+maturity <- 1
+
+cf_bs <- function(u) {
+  drift <- log(spot) + (risk_free - 0.5 * sigma^2) * maturity
+  exp(1i * u * drift - 0.5 * sigma^2 * maturity * u^2)
+}
+
+cos_prices <- digital_cos_method(
+  cf = cf_bs,
+  option_type = "call",
+  spot = spot,
+  risk_free_rate = risk_free,
+  maturity = maturity,
+  strikes = c(90, 100, 110),
+  n_terms = 256,
+  truncation = 8,
+  grid_size = 4001
+)
+cos_prices
+```
+
+## Accuracy Diagnostic
+
+```{r}
+expected_prices <- exp(-risk_free * maturity) * stats::pnorm(
+  (
+    log(spot / cos_prices$strike) +
+      (risk_free - 0.5 * sigma^2) * maturity
+  ) / (sigma * sqrt(maturity))
+)
+
+tibble::tibble(
+  strike = cos_prices$strike,
+  cos_price = cos_prices$price,
+  closed_form = expected_prices,
+  abs_error = abs(cos_prices$price - expected_prices)
+)
+```
+
+Errors remain well within the tolerance showcased in the lecture notebook.
+
+## Visual Snapshot
+
+```{r}
+ggplot(cos_prices, aes(strike, price)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Digital Call Price vs Strike",
+    x = "Strike",
+    y = "Price"
+  )
+```
+
+```{r}
+plot_ly(cos_prices, x = ~strike, y = ~price, type = "scatter",
+        mode = "lines+markers", line = list(color = "royalblue")) |>
+  layout(
+    title = "Digital Call Price vs Strike (Interactive)",
+    xaxis = list(title = "Strike"),
+    yaxis = list(title = "Price")
+  )
+```
+
+```{r}
+plot_ly(digital_grid, x = ~strike, y = ~price, color = ~factor(volatility),
+        type = "scatter", mode = "markers", symbol = ~factor(spot)) |>
+  layout(
+    title = "Closed-Form Digital Prices",
+    xaxis = list(title = "Strike"),
+    yaxis = list(title = "Price"),
+    legend = list(title = list(text = "Volatility"))
+  )
+```
+
+## Key Takeaways
+
+- Closed-form pricing is exposed directly through `price_digital_call()` and
+  `price_digital_put()`.
+- The COS density workflow mirrors the Python implementation while benefiting
+  from tidy data outputs.
+- Put-call parity validation provides a quick confidence check for numerical
+  experiments.
