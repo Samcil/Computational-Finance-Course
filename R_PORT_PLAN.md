@@ -1,386 +1,141 @@
 # R Port Implementation Plan
 
-## Overview
-Porting 31 Python computational finance scripts to R following tidyverse and R package development best practices.
-
-## Design Principles
-
-### 1. Tidyverse Philosophy
-- **Pipeable functions**: All functions work with `|>` pipe operator
-- **Data-first arguments**: Data/paths argument comes first when appropriate
-- **Consistent returns**: Return tibbles for tabular data, lists for complex structures
-- **Tidy data**: One observation per row, one variable per column
-
-### 2. Naming Conventions
-- **Functions**: `snake_case` (e.g., `generate_gbm_paths`, `calculate_call_price`)
-- **Variables**: `snake_case` (e.g., `n_paths`, `time_grid`, `stock_price`)
-- **Files**: `snake_case.R` (e.g., `gbm_paths.R`, `heston_model.R`)
-- **Meaningful names**: `n_paths` instead of `NoOfPaths`, `interest_rate` instead of `r`
-
-### 3. Modular Structure
-- **Separation of concerns**: Simulation, pricing, plotting in separate functions
-- **Reusable components**: Common utilities in shared modules
-- **Clear interfaces**: Well-defined inputs/outputs
-- **Composability**: Functions that work together naturally
-
-### 4. Documentation Standards (roxygen2)
-```r
-#' Generate Geometric Brownian Motion Paths
-#'
-#' Simulates stock price paths under GBM dynamics using Euler-Maruyama discretization.
-#' The process follows dS(t) = r*S(t)*dt + sigma*S(t)*dW(t).
-#'
-#' @param n_paths Integer. Number of Monte Carlo paths to simulate.
-#' @param n_steps Integer. Number of time steps for discretization.
-#' @param maturity Numeric. Time to maturity in years.
-#' @param interest_rate Numeric. Risk-free interest rate (annualized).
-#' @param volatility Numeric. Volatility parameter (annualized).
-#' @param initial_price Numeric. Initial stock price at t=0.
-#' @param seed Integer. Random seed for reproducibility. Default is 123.
-#'
-#' @return A tibble with columns:
-#'   \describe{
-#'     \item{path_id}{Path identifier (1 to n_paths)}
-#'     \item{time}{Time point}
-#'     \item{stock_price}{Simulated stock price}
-#'     \item{log_price}{Log of stock price (ABM process)}
-#'   }
-#'
-#' @examples
-#' # Simulate 100 paths over 1 year
-#' paths <- generate_gbm_paths(
-#'   n_paths = 100,
-#'   n_steps = 252,
-#'   maturity = 1.0,
-#'   interest_rate = 0.05,
-#'   volatility = 0.2,
-#'   initial_price = 100
-#' )
-#'
-#' @export
-generate_gbm_paths <- function(n_paths, n_steps, maturity,
-                                interest_rate, volatility, initial_price,
-                                seed = 123) {
-  # Implementation
-}
-```
-
-### 5. Visualization Standards
-- Use **ggplot2** for all visualizations
-- Return plot objects (not print them)
-- Consistent theme and styling
-- Proper labels, titles, legends
-
-## Implementation Phases
-
-### Phase 1: Core Building Blocks (Priority 1)
-
-#### 1.1 GBM/ABM Path Generation
-**File**: `R/gbm_paths.R`
-- `generate_gbm_paths()` - Main path generation
-- `generate_abm_paths()` - ABM specifically
-- `plot_paths()` - Visualization helper
-
-**Python source**: `Lecture 03/GBM_ABM_paths.py`
-
-#### 1.2 Poisson Process
-**File**: `R/poisson_process.R`
-- `generate_poisson_process()` - Poisson path generation
-- `generate_compound_poisson()` - With jump sizes
-- `plot_jump_process()` - Visualization
-
-**Python source**: `Lecture 05/PoissonProcess_paths.py`
-
-#### 1.3 Correlated Brownian Motion
-**File**: `R/correlated_brownian_motion.R`
-- `generate_correlated_bm()` - Multivariate BM
-- `plot_correlation_paths()` - 2D/3D visualization
-
-**Python source**: `Lecture 07/CorrelatedBM.py`
-
-#### 1.4 CIR Process
-**File**: `R/cir_process.R`
-- `generate_cir_paths()` - CIR variance process
-- `generate_cir_exact()` - Exact simulation (noncentral chi-squared)
-- `plot_cir_paths()` - Visualization
-
-**Python sources**: 
-- `Lecture 10/CIR_paths_Exact.py`
-- `Lecture 10/CIR_paths_boundary.py`
-
-#### 1.5 Black-Scholes Pricing
-**File**: `R/black_scholes.R`
-- `bs_call_price()` - Call option price
-- `bs_put_price()` - Put option price
-- `bs_delta()` - Delta Greek
-- `bs_gamma()` - Gamma Greek
-- `bs_vega()` - Vega Greek
-
-**Python sources**: Used across multiple files
-
-### Phase 2: Advanced Models (Priority 2)
-
-_Status: Complete (2025-11-04)_
-
-#### 2.1 Heston Model
-**Files**: 
-- `R/heston_simulation.R` - Path generation
-- `R/heston_pricing.R` - Option pricing via COS
-
-**Functions**:
-- `generate_heston_paths_euler()`
-- `generate_heston_paths_aes()` - Almost Exact Scheme
-- `heston_characteristic_function()`
-- `price_heston_option_cos()`
-
-**Python sources**:
-- `Lecture 10/HestonModelDiscretization.py`
-- `Lecture 10/CIR_ExactSimulation.py`
-- `Lecture 10/OptionPrices_EulerAndMilstein.py`
-
-#### 2.2 Merton Jump-Diffusion
-**File**: `R/merton_model.R`
-- `generate_merton_paths()` - Jump-diffusion simulation
-- `merton_characteristic_function()`
-
-**Python source**: `Lecture 05/MertonProcess_paths.py`
-
-#### 2.3 Bates Model
-**File**: `R/bates_model.R`
-- `generate_bates_paths()` - Heston + jumps
-- `bates_characteristic_function()`
-- `bates_implied_volatility()`
-
-**Python source**: `Lecture 12/BatesImpliedVolatility.py`
-
-#### 2.4 COS Method
-**File**: `R/cos_method.R`
-- `cos_call_put_price()` - Generic COS pricing
-- `cos_density_recovery()` - Density from CF
-- `cos_coefficients()` - Fourier coefficients
-- `chi_psi_functions()` - Auxiliary functions
-
-**Python sources**:
-- `Lecture 08/CallPut_COS_Method.py`
-- `Lecture 08/COS_Normal_Density_Recovery.py`
-- `Lecture 08/COS_LogNormal_Density_Recovery.py`
-- `Lecture 08/CashOrNothing_COS_Method.py`
-
-#### 2.5 Convergence Analysis
-**File**: `R/convergence_analysis.R`
-- `euler_convergence_study()` - Euler scheme convergence
-- `milstein_convergence_study()` - Milstein scheme convergence
-- `plot_convergence_rates()` - Visualization
-
-**Python sources**:
-- `Lecture 09/EulerConvergence_GBM.py`
-- `Lecture 09/MilsteinConvergence_GBM.py`
-
-> Deliverables implemented: Heston/Merton/Bates specs with COS pricing, convergence utilities, and associated tests are in place. Proceeding to Phase 3 feature work.
-
-### Phase 3: Greeks & Hedging (Priority 3)
-
-_Status: Complete (2025-11-04)_
-
-#### 3.1 Implied Volatility
-**File**: `R/implied_volatility.R`
-- `implied_volatility_call()` - Newton-Raphson solver
-- `implied_volatility_put()` - Put IV
-- `plot_volatility_smile()` - IV smile visualization
-
-**Python source**: `Lecture 04/ImpliedVolatility.py`
-
-#### 3.2 Pathwise Sensitivities
-**File**: `R/pathwise_sensitivities.R`
-- `pathwise_delta()` - Pathwise delta estimation
-- `pathwise_vega()` - Pathwise vega estimation
-- `compare_with_finite_diff()` - Validation
-
-**Python source**: `Lecture 11/PathwiseSens_DeltaVega.py`
-
-#### 3.3 Delta Hedging
-**Files**:
-- `R/delta_hedging_bs.R` - BS delta hedging
-- `R/delta_hedging_jumps.R` - Hedging with jumps
-
-> Deliverables implemented: Implied volatility solvers, volatility smile plotting, pathwise sensitivities with finite-difference validation, and documentation updates. Discrete-time Black-Scholes hedging with transaction costs and jump-diffusion diagnostics now implemented with accompanying regression tests.
-
-**Python sources**:
-- `Lecture 11/BS_Hedging.py`
-- `Lecture 11/HedgingWithJumps.py`
-
-### Phase 4: Exotic Options (Priority 4)
-
-_Status: Complete (2025-11-05)_
-
-#### 4.1 Asian Options
-**File**: `R/asian_options.R`
-- `price_asian_call()` - Monte Carlo pricing
-- `price_asian_put()` - Put options
-- `asian_variance_reduction()` - Control variates
-
-> Progress 2025-11-04: Implemented Monte Carlo pricing with antithetic variance reduction and added regression tests.
-
-**Python source**: `Lecture 13/AsianOption.py`
-
-#### 4.2 Barrier Options
-**File**: `R/barrier_options.R`
-- `price_barrier_option()` - Up/down, in/out pricing
-- `barrier_hit_probability()` - Analysis
-
-> Progress 2025-11-04: Added Monte Carlo pricing for barrier structures with complementarity checks and barrier hit probability estimator plus regression tests.
-
-**Python source**: `Lecture 13/DigitalPayoffs_CostReduction.py` (partial)
-
-#### 4.3 Digital Options
-**File**: `R/digital_options.R`
-- `price_digital_call()` - Cash-or-nothing
-- `price_digital_put()` - Put digital
-- `digital_cos_method()` - COS pricing
-
-**Python source**: `Lecture 08/CashOrNothing_COS_Method.py`
-
-> Progress 2025-11-05: Added Black-Scholes closed-form pricing, COS density integration, probability clamping, and regression tests spanning analytic parity and Fourier accuracy.
-
-#### 4.4 Forward Start Options
-**File**: `R/forward_start_options.R`
-- `price_forward_start_heston()` - Forward start under Heston
-- `forward_start_characteristic_function()`
-
-**Python source**: `Lecture 12/HestonForwardStart2.py`
-
-> Progress 2025-11-05: Implemented Heston forward-start characteristic function, COS pricing pipeline, and Monte Carlo regression tests; Phase 4 feature set complete.
-
-### Phase 5: Package Infrastructure (Priority 5)
-
-#### 5.1 Package Setup Files
-- `DESCRIPTION` - Package metadata, dependencies
-- `NAMESPACE` - Exported functions (auto-generated by roxygen2)
-- `.Rbuildignore` - Files to exclude from package
-- `LICENSE` - MIT or GPL-3
-
-#### 5.2 Utility Functions
-**File**: `R/utils.R`
-- `create_time_grid()` - Time grid generation
-- `standardize_normal()` - Normal random variables
-- `format_paths_tibble()` - Convert to tidy format
-
-**File**: `R/plotting_utils.R`
-- `theme_compfinance()` - Custom ggplot2 theme
-- `create_path_plot()` - Standard path visualization
-- `create_convergence_plot()` - Convergence plot template
-
-#### 5.3 Testing
-**Directory**: `tests/testthat/`
-- `test-gbm_paths.R` - Test GBM simulation
-- `test-black_scholes.R` - Test BS formulas
-- `test-cos_method.R` - Test COS pricing
-- etc.
-
-#### 5.4 Documentation
-**Directory**: `vignettes/`
-- `introduction.Rmd` - Getting started
-- `basic_simulations.Rmd` - GBM, Poisson, etc.
-- `heston_model.Rmd` - Stochastic volatility
-- `cos_method.Rmd` - Fourier pricing
-- `hedging_strategies.Rmd` - Greeks and hedging
-
-#### 5.5 Data Documentation
-**File**: `R/data.R`
-- Document any included datasets
-- Example market data for testing
-
-## Key Differences from Python
-
-### 1. Data Structures
-- **Python**: NumPy arrays (matrices)
-- **R**: Tibbles (tidy data frames) for analysis, matrices for computation
-
-### 2. Random Number Generation
-- **Python**: `np.random.normal()`, `np.random.seed()`
-- **R**: `rnorm()`, `set.seed()`, `withr::with_seed()` for local seeds
-
-### 3. Plotting
-- **Python**: matplotlib
-- **R**: ggplot2 with consistent theme
-
-### 4. Linear Algebra
-- **Python**: NumPy
-- **R**: Base R matrices, MASS::mvrnorm for multivariate
-
-### 5. Function Organization
-- **Python**: Scripts with `if __name__ == "__main__":`
-- **R**: Exported package functions + unexported helpers
-
-## Dependencies
-
-### Required R Packages
-```r
-Imports:
-  tibble (>= 3.0.0),
-  dplyr (>= 1.0.0),
-  ggplot2 (>= 3.3.0),
-  purrr (>= 0.3.0),
-  tidyr (>= 1.1.0),
-  rlang (>= 0.4.0),
-  MASS,
-  stats
-
-Suggests:
-  testthat (>= 3.0.0),
-  knitr,
-  rmarkdown,
-  withr
-```
-
-## Implementation Timeline
-
-### Week 1: Foundation (Phase 1)
-- Set up package structure
-- Implement core path generation (GBM, ABM, Poisson, CIR)
-- Create plotting utilities
-- Write initial tests
-
-### Week 2: Advanced Models (Phase 2)
-- Implement Heston model
-- Implement Merton and Bates models
-- Implement COS method
-- Convergence analysis tools
-
-### Week 3: Greeks & Hedging (Phase 3)
-- Black-Scholes Greeks
-- Implied volatility
-- Pathwise sensitivities
-- Hedging strategies
-
-### Week 4: Exotic Options (Phase 4)
-- Asian options
-- Barrier options
-- Digital options
-- Forward start options
-
-### Week 5: Finalization (Phase 5)
-- Complete testing suite
-- Write vignettes
-- Generate documentation
-- Package checks (R CMD check)
+## Mission
+- Deliver a unified, tidymodels-aligned R toolbox that mirrors the functionality of the Computational Finance Python notebooks while emphasising composable specifications, reusable engines, and reproducible calibration workflows.
+- Focus near-term effort on the interest-rate stack (curve construction, short-rate dynamics, swap/caplet analytics, exposure profiling) to close gaps with the FinancialEngineering_IR_xVA reference material.
+
+## Architectural Guardrails
+- Model specifications expose immutable parameter lists and defer heavy lifting to pluggable engines (`term_structure_spec`, `short_rate_spec`, `*_spec` families).
+- `fit()`, `simulate_paths()`, `predict()`, and `augment()` follow hardhat blueprints, returning tibbles with explicit column conventions.
+- Pricing and calibration functions remain pure (no hidden state), accept specs first, and return tidy metric/value pairs for downstream summarisation.
+- Shared math utilities (discount splines, RNG helpers, Fourier kernels) live in dedicated modules to maintain DRY principles.
+- Tests, examples, and vignettes accompany new features before features are marked complete.
+
+## Current Implementation Snapshot
+
+### Core Framework
+| File | Role | Status | Alignment Notes |
+| --- | --- | --- | --- |
+| spec_utils.R | Minimal tidymodels-style spec constructors & engine wiring | Stable | Adopted by all spec types; extend to record version metadata before GA |
+| simulate_paths.R | User-facing dispatcher for stochastic processes | Stable | Covers all current specs; add input schema checks for list-column outputs |
+| simulate_paths_engines.R | Engine implementations for GBM/ABM/Gaussian short rate | Stable | Needs extension hooks for variance reduction and multi-factor engines |
+| random_utils.R | Deterministic RNG helpers (`with_random_seed`, standardised normals) | Stable | Consider migrating to withr for nested seeds |
+| plot_paths.R | ggplot2 path visualisation | Stable | Add facets for multi-asset specs and swap exposure outputs |
+| augment_generics.R | Augment generic registration | Stable | Ensure every fit object registers an augment method before release |
+| fit_generics.R | Fit generic registration | Stable | Expand documentation with examples for interest-rate fits |
+| price_generics.R | Price generic registration | Stable | Reconcile naming with swap/caplet helpers (currently direct functions) |
+
+### Process & Model Specs
+| File | Role | Status | Alignment Notes |
+| --- | --- | --- | --- |
+| bm_specs.R | ABM/GBM spec constructors | Stable | Engines support Euler schemes; add variance-reduced engine option |
+| correlated_bm_process.R | Multivariate Brownian motion spec and simulator | Stable | Provides tidy outputs; align covariance validation with Python Cholesky demos |
+| poisson_process.R | Poisson and compound Poisson specs | Stable | Integrate jump size distribution controls per Python lecture |
+| cir_process.R | CIR process simulator & analytics | Stable | Update docs to highlight reuse inside Heston/CIR calibration |
+| heston_model.R | Heston spec, simulators, CF | Stable | Ensure COS helpers reuse shared Fourier code |
+| bates_model.R | Bates (Heston + jumps) spec & simulator | Stable | Add calibration vignette referencing lecture material |
+| merton_model.R | Jump-diffusion spec & simulator | Stable | Document linkage with delta hedging jump example |
+| shifted_lognormal.R | Shifted lognormal transform utilities | Stable | Review integration into swaption smile workflows |
+
+### Fourier, Numerical & Analytics
+| File | Role | Status | Alignment Notes |
+| --- | --- | --- | --- |
+| cos_method.R | COS pricing & density recovery | Stable | Shares kernels with digital options; extend unit tests to Ho-Lee bond options |
+| fft_density_recovery.R | FFT-based density inversion | Stable | Needs example showcasing calibration residuals |
+| monte_carlo_integration.R | Generic MC integration helpers | Stable | Reuse in swap exposure Monte Carlo to avoid duplicate accumulation logic |
+| stochastic_calculus.R | Ito calculus utilities & exact moments | Stable | Reference in documentation for convergence studies |
+| convergence_analysis.R | Euler/Milstein convergence diagnostics | Stable | Align output schema with new plotting conventions |
+
+### Interest-Rate Stack
+| File | Role | Status | Alignment Notes |
+| --- | --- | --- | --- |
+| term_structure_spec.R | Tidymodels-style deterministic curve spec | Stable | Only direct engine implemented; add bootstrapped/Newton engines for multi-curve builds |
+| term_structure_engines.R | Direct term-structure calibration engine | Stable | Extend with OIS/LIBOR bootstrapping and Newton-Raphson solver (from Python `MultiCurveBuild.py`) |
+| discount_curve_utils.R | Spline-based discount/forward utilities | Stable | Add monotonic enforcement & boundary extrapolation used in Python scripts |
+| short_rate_spec.R | Ho-Lee/Hull-White spec & simulator | Stable | Currently Ho-Lee/Hull-White only; plan OU/CIR families per strategic hierarchy |
+| simulate_paths_engines.R | Gaussian short-rate Monte Carlo engine | Stable | Needs modular drift hooks for multi-curve theta functions |
+| short_rate_derivatives.R | Bond options & Jamshidian swaption pricing | Stable | Introduce analytics for multi-factor specs once available |
+| caplet_pricing.R | Caplet/floorlet analytics (bond-option mapping) | Stable | Extend to support displaced diffusion (python Lecture 05 extension) |
+| short_rate_calibration.R | Caplet/swaption volatility calibration wrappers | Stable | Currently 1-D volatility search; expand to joint (sigma, a) estimation |
+| swap_utils.R | Schedule validation helpers | Stable | Add support for stubs and amortising notionals |
+| swap_pricing.R | Swap PV/DV01 & schedule builder | Stable | Introduce floating leg day-count conventions to mirror Python schedule builder |
+| swap_exposure.R | Monte Carlo swap exposure & PFE summary | Stable | Integrate cholesky-driven multi-curve simulation when two curve specs exist |
+
+### Pricing, Greeks & Hedging
+| File | Role | Status | Alignment Notes |
+| --- | --- | --- | --- |
+| black_scholes.R | Closed-form pricing & Greeks | Stable | Already used by delta hedging; document integration points |
+| asian_options.R | Monte Carlo Asian pricing & control variates | Stable | Add link to pathwise sensitivities for Greeks |
+| barrier_options.R | Barrier option pricing & diagnostics | Stable | Extend to include rebate support per Python examples |
+| digital_options.R | Digital pricing & COS bridge | Stable | Provide ties to term-structure discounting |
+| forward_start_options.R | Forward-start pricing under Heston | Stable | Align with python `HestonForwardStart2.py` parameter naming |
+| implied_volatility.R | Newton IV solver & smile plotting | Stable | Reuse in swaption calibration reporting |
+| pathwise_sensitivities.R | Pathwise Greeks utilities | Stable | Integrate with swap exposure outputs |
+| delta_hedging_bs.R | Discrete-time BS hedging backtest | Stable | Factor out portfolio accounting for reuse |
+| delta_hedging_jumps.R | Hedging under jumps | Stable | Align random seeds with `random_utils` |
+
+### Package Infrastructure
+| File | Role | Status | Alignment Notes |
+| --- | --- | --- | --- |
+| price_generics.R | Generic registration | Stable | Expand coverage to interest-rate instruments |
+| fit_generics.R | Generic registration | Stable | Already used by term structure & short-rate fits |
+| augment_generics.R | Generic registration | Stable | Ensure consistent messaging |
+| zzz.R | Package hooks & namespace init | Stable | Monitor dependency loading |
+
+## Reference Python Baseline
+- `FinancialEngineering_IR_xVA/MultiCurveBuild.py`: Newton-based multi-curve calibration with swap pricing residuals.
+- `.../affine_diffusion_materials/QUICK_DEMO.R` & `test_fourier_features.R`: Bond/swap valuation pipelines used for parity checks.
+- Lectures 05–12 notebooks: Caplet/swaption analytics, Jamshidian implementations, xVA exposure demos.
+- Cholesky demos (e.g., `cholesky_decomposition_demo.R`) inform correlated factor handling.
+
+## Gap Analysis
+- Term-structure module lacks piecewise bootstrapping, forward extrapolation, and multi-curve linkage (OIS vs LIBOR) showcased in Python.
+- Short-rate calibration searches only volatility; Python workflows solve simultaneously for `(sigma, a)` and optionally initial forward curve shifts.
+- No abstraction yet for process inheritance (e.g., OU family) or multiple-factor Gaussian models (G2++), both present in lecture notes.
+- Swap exposure simulator assumes single-curve discounting; Python examples support discount/forward curve separation and CSA adjustments.
+- Documentation and vignettes have not been refreshed post engine refactor; plan requires a new interest-rate vignette aligned with the strategic port plan.
+
+## Architecture Blueprint
+- **Term-Structure Engines**: Introduce `bootstrap_piecewise`, `newton_multi_curve`, and `spline_smooth` engines, each conforming to a shared contract returning discount/zero/forward columns with provenance metadata.
+- **Short-Rate Model Hierarchy**: Establish `gaussian_short_rate_spec` (base), `ho_lee_spec`, `hull_white_spec`, and future `g2pp_spec`, using inheritance helpers to register model families and share theta calculations.
+- **Calibration Orchestration**: Expand `fit.short_rate_spec()` to accept recipe-style lists of instrument books (caps, swaptions, bonds) and run constrained optimisations via `stats::optim()` or `nloptr`, mirroring Python solver flows.
+- **Pricing & Exposure Layer**: Normalise outputs (`metric`, `value`, `unit`) across swaps, caps, swaptions, and exposures; ensure `price_*` functions optionally attach Greeks and scenario metadata when fed path-level inputs.
+- **Testing & Diagnostics**: Adopt snapshot-based regression tests for calibration outputs, comparing against Python benchmarks stored under `tests/fixtures/`.
+
+## Implementation Roadmap
+- **Phase A – Interest-Rate Foundations (in flight)**
+  - Add comprehensive tests for `term_structure_spec` and `short_rate_spec` covering Ho-Lee/Hull-White analytics (`tests/testthat/test-term-structure.R`, `test-short-rate.R`).
+  - Build bootstrapping and Newton engines in `term_structure_engines.R`, including dual-curve calibration mirroring `MultiCurveBuild.py`.
+  - Refactor `short_rate_calibration.R` to support joint parameter estimation and return broom-like tidiers (`augment()`, `tidy()`).
+- **Phase B – Multi-Curve Simulation & Pricing**
+  - Extend `short_rate_spec` engine state to store multiple discount/forward curves and adapt Monte Carlo to pull curve-specific theta functions.
+  - Update `swap_pricing.R` and `swap_exposure.R` to read forward curves separately from discount curves, enabling FRA-style analytics.
+  - Implement curve-consistent caplet/swaption pricing tests referencing Python outputs.
+- **Phase C – Advanced Models & Risk**
+  - Introduce `g2pp_spec` and correlated Gaussian factor engines, using Cholesky utilities from the Python lectures.
+  - Add displaced-diffusion caplet pricing and smile fitting modules to align with Lecture 05 content.
+  - Expand exposure analytics to compute CVA/DVA style metrics leveraging Monte Carlo results.
+- **Phase D – Documentation & Packaging**
+  - Publish an interest-rate vignette demonstrating calibration → simulation → pricing flow.
+  - Refresh README and architecture docs to reflect engine-based design.
+  - Run `devtools::document()`, `devtools::test()`, `devtools::check()` gates and capture results in `REFACTORING_STATUS.md`.
+
+## Testing & Validation Strategy
+- Extend `tests/testthat` with parity tests that ingest saved Python benchmark CSVs for curves, caplets, and swaptions.
+- Add high-level integration tests covering multi-curve calibration, swap PV consistency, and exposure quantile stability.
+- Use property-based tests (via `quickcheck` or manual loops) for monotonic discount curves and Jamshidian root bracketing.
+
+## Documentation & Examples
+- Update roxygen examples to showcase spec creation → fit → predict workflows for both term structures and short-rate models.
+- Provide notebooks or vignettes comparing R outputs directly against Python results, highlighting any tolerances.
+- Maintain `REFACTORING_SUMMARY.md` with progress bullets per roadmap phase.
+
+## Dependencies & Tooling
+- Core imports remain `tibble`, `dplyr`, `purrr`, `tidyr`, `rlang`, `cli`, `checkmate`, `hardhat`.
+- Evaluate `Matrix`/`pracma` for multi-curve solvers, `numDeriv` for calibration Jacobians, and `future`/`furrr` for parallel Monte Carlo once deterministic baselines are stabilised.
 
 ## Success Criteria
-
-1. ✅ All 31 Python scripts ported to idiomatic R
-2. ✅ 100% roxygen2 documentation coverage
-3. ✅ All functions follow tidyverse principles
-4. ✅ Passes R CMD check with no errors/warnings
-5. ✅ Comprehensive test suite (>80% coverage)
-6. ✅ Complete vignettes for all major functionality
-7. ✅ Consistent naming and code style
-8. ✅ DRY principles applied (no code duplication)
-
-## Notes
-
-- Focus on **correctness** over performance initially
-- Use **tidyverse** approaches even if base R is faster
-- Prioritize **readability** and **maintainability**
-- Include **examples** in all documentation
-- Write **tests** alongside implementation
-- Keep Python files unchanged (separate R implementation)
+- Multi-curve calibration reproduces Python benchmarks within tolerance (<0.5 bp on zero curve, <1 bp on swap PVs).
+- Short-rate calibration supports joint `(sigma, a)` estimation with convergence diagnostics and broom tidiers.
+- Swap exposure engine generates EE/PFE curves consistent across single-curve and multi-curve modes.
+- Package passes `R CMD check` without errors/warnings/notes and all new modules have targeted tests and documentation.
